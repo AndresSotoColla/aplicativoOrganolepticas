@@ -1,0 +1,574 @@
+package com.example.aplicativoorganolepticas.ui.screens
+
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
+import com.example.aplicativoorganolepticas.ui.theme.LightBeige
+import com.example.aplicativoorganolepticas.ui.viewmodel.OrganoViewModel
+import com.example.aplicativoorganolepticas.ui.viewmodel.SampleState
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OrganoFormScreen(
+    viewModel: OrganoViewModel,
+    onBack: () -> Unit
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Global dropdowns expanded states
+    var blockMenuExpanded by remember { mutableStateOf(false) }
+    var finProtMenuExpanded by remember { mutableStateOf(false) }
+    var translucidezMenuExpanded by remember { mutableStateOf(false) }
+    var categoriaMenuExpanded by remember { mutableStateOf(false) }
+    var mejoradorMenuExpanded by remember { mutableStateOf(false) }
+    var afectacionMenuExpanded by remember { mutableStateOf(false) }
+
+    val availableBlocks by viewModel.availableBlocks.collectAsState()
+    val filteredBlocks = remember(viewModel.bloque, availableBlocks) {
+        if (viewModel.bloque.isEmpty()) availableBlocks
+        else availableBlocks.filter { it.contains(viewModel.bloque, ignoreCase = true) }
+    }
+    val isBlockValid = availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque)
+
+    val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
+    val translucidezOptions = (1..10).map { it * 10 }
+
+    // Camera launcher
+    var currentCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        viewModel.onPhotoTaken(success)
+    }
+
+    BackHandler { onBack() }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Ingresar Registro", color = Color.Black, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.Black)
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = LightBeige)
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = LightBeige
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // ── BLOQUE ───────────────────────────────────────────────────
+            SectionLabel("Bloque")
+            ExposedDropdownMenuBox(
+                expanded = blockMenuExpanded,
+                onExpandedChange = { blockMenuExpanded = it },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = viewModel.bloque,
+                    onValueChange = { viewModel.bloque = it },
+                    label = { Text("Escriba o seleccione bloque", color = if (isBlockValid) Color.Black else Color.Red) },
+                    textStyle = blackTextStyle,
+                    isError = viewModel.bloque.isNotEmpty() && !isBlockValid,
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = blockMenuExpanded) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black,
+                        errorBorderColor = Color.Red
+                    )
+                )
+                if (filteredBlocks.isNotEmpty()) {
+                    ExposedDropdownMenu(
+                        expanded = blockMenuExpanded,
+                        onDismissRequest = { blockMenuExpanded = false },
+                        modifier = Modifier.background(DarkBeige)
+                    ) {
+                        filteredBlocks.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option, color = Color.Black) },
+                                onClick = { viewModel.bloque = option; blockMenuExpanded = false },
+                                modifier = Modifier.background(DarkBeige)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── NÚMERO BIN ───────────────────────────────────────────────
+            val binVal = viewModel.numeroBin.toIntOrNull()
+            val isBinError = viewModel.numeroBin.isNotEmpty() && (binVal == null || binVal < 1 || binVal > 200)
+            SectionLabel("Número de Bin")
+            OutlinedTextField(
+                value = viewModel.numeroBin,
+                onValueChange = { if (it.length <= 3) viewModel.numeroBin = it.filter { c -> c.isDigit() } },
+                label = { Text("1 – 200", color = if (isBinError) Color.Red else Color.Black) },
+                textStyle = blackTextStyle,
+                isError = isBinError,
+                supportingText = { if (isBinError) Text("Debe ser un número entre 1 y 200", color = Color.Red) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (isBinError) Color.Red else Color.Black,
+                    unfocusedBorderColor = if (isBinError) Color.Red else Color.Black
+                )
+            )
+
+            // ── 5 MUESTRAS ───────────────────────────────────────────────
+            for (i in 0 until 5) {
+                SampleCard(
+                    index = i,
+                    sampleState = viewModel.samples[i],
+                    onPesoChange = { viewModel.updateSamplePeso(i, it) },
+                    onColorChange = { viewModel.updateSampleColor(i, it) },
+                    onBrixChange = { viewModel.updateSampleBrix(i, it) },
+                    onPruebaAcidezChange = { viewModel.updateSamplePruebaAcidez(i, it) },
+                    onAcidezChange = { viewModel.updateSampleAcidez(i, it) },
+                    onTakePhoto = {
+                        val uri = viewModel.prepareCameraForSample(i)
+                        currentCameraUri = uri
+                        cameraLauncher.launch(uri)
+                    }
+                )
+            }
+
+            // ── % AVANCE TRANSLUCIDEZ ────────────────────────────────────
+            SectionLabel("% Avance Translucidez")
+            ExposedDropdownMenuBox(
+                expanded = translucidezMenuExpanded,
+                onExpandedChange = { translucidezMenuExpanded = !translucidezMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = "${viewModel.avanceTranslucidez}%",
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = translucidezMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = translucidezMenuExpanded,
+                    onDismissRequest = { translucidezMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    translucidezOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text("$option%", color = Color.Black) },
+                            onClick = { viewModel.avanceTranslucidez = option; translucidezMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── CATEGORÍA ────────────────────────────────────────────────
+            SectionLabel("Categoría")
+            ExposedDropdownMenuBox(
+                expanded = categoriaMenuExpanded,
+                onExpandedChange = { categoriaMenuExpanded = !categoriaMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = viewModel.categoria,
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoriaMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = categoriaMenuExpanded,
+                    onDismissRequest = { categoriaMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    listOf("Especial", "Industria", "Jugo").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, color = Color.Black) },
+                            onClick = { viewModel.categoria = option; categoriaMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── AFECTACIONES (multi) ─────────────────────────────────────
+            SectionLabel("Afectaciones")
+            ExposedDropdownMenuBox(
+                expanded = afectacionMenuExpanded,
+                onExpandedChange = { afectacionMenuExpanded = !afectacionMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = if (viewModel.selectedAfectaciones.isEmpty()) "Ninguna" else viewModel.selectedAfectaciones.joinToString(", "),
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectacionMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = afectacionMenuExpanded,
+                    onDismissRequest = { afectacionMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    viewModel.afectacionOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = viewModel.selectedAfectaciones.contains(option),
+                                        onCheckedChange = null,
+                                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(option, color = Color.Black)
+                                }
+                            },
+                            onClick = { viewModel.onAfectacionToggle(option) },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── MEJORADOR (multi) ────────────────────────────────────────
+            SectionLabel("Mejorador")
+            ExposedDropdownMenuBox(
+                expanded = mejoradorMenuExpanded,
+                onExpandedChange = { mejoradorMenuExpanded = !mejoradorMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = if (viewModel.selectedMejoradores.isEmpty()) "Seleccionar..." else viewModel.selectedMejoradores.joinToString(", "),
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = mejoradorMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = mejoradorMenuExpanded,
+                    onDismissRequest = { mejoradorMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    viewModel.mejoradorOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = viewModel.selectedMejoradores.contains(option),
+                                        onCheckedChange = null,
+                                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(option, color = Color.Black)
+                                }
+                            },
+                            onClick = { viewModel.onMejoradorToggle(option) },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── FIN PROTOCOLO MADURACIÓN ─────────────────────────────────
+            SectionLabel("Fin Protocolo Maduración")
+            ExposedDropdownMenuBox(
+                expanded = finProtMenuExpanded,
+                onExpandedChange = { finProtMenuExpanded = !finProtMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = viewModel.finProtocoloMaduracion,
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = finProtMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = finProtMenuExpanded,
+                    onDismissRequest = { finProtMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    listOf("Sí", "No").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, color = Color.Black) },
+                            onClick = { viewModel.finProtocoloMaduracion = option; finProtMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ── GUARDAR ──────────────────────────────────────────────────
+            Button(
+                onClick = {
+                    viewModel.saveRecord { errorMsg ->
+                        scope.launch {
+                            if (errorMsg != null) {
+                                snackbarHostState.showSnackbar(errorMsg)
+                            } else {
+                                snackbarHostState.showSnackbar("Registro guardado correctamente")
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
+            ) {
+                Text("GUARDAR", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SampleCard(
+    index: Int,
+    sampleState: SampleState,
+    onPesoChange: (String) -> Unit,
+    onColorChange: (String) -> Unit,
+    onBrixChange: (String) -> Unit,
+    onPruebaAcidezChange: (Boolean) -> Unit,
+    onAcidezChange: (String) -> Unit,
+    onTakePhoto: () -> Unit
+) {
+    var colorMenuExpanded by remember { mutableStateOf(false) }
+    val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
+    val colorOptions = listOf("0.5", "1.0", "1.5", "2.0", "2.5", "≥3.0")
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Muestra ${index + 1}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                // Foto thumbnail or camera button
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DarkBeige)
+                        .border(1.dp, Color.Black.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { onTakePhoto() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (sampleState.fotoUri != null) {
+                        AsyncImage(
+                            model = sampleState.fotoUri,
+                            contentDescription = "Foto muestra ${index + 1}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Tomar foto",
+                                tint = Color.Black,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Text(
+                                text = "Foto",
+                                fontSize = 10.sp,
+                                color = Color.Black
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Peso Fruta
+            OutlinedTextField(
+                value = sampleState.pesoFruta,
+                onValueChange = { onPesoChange(it.filter { c -> c.isDigit() || c == '.' }) },
+                label = { Text("Peso Fruta (g)", color = Color.Black) },
+                textStyle = blackTextStyle,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Black,
+                    unfocusedBorderColor = Color.Black
+                )
+            )
+
+            // Color Externo
+            Text("Color Externo", fontWeight = FontWeight.Medium, color = Color.Black, fontSize = 14.sp)
+            ExposedDropdownMenuBox(
+                expanded = colorMenuExpanded,
+                onExpandedChange = { colorMenuExpanded = !colorMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = sampleState.colorExterno,
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = colorMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+                ExposedDropdownMenu(
+                    expanded = colorMenuExpanded,
+                    onDismissRequest = { colorMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    colorOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, color = Color.Black) },
+                            onClick = { onColorChange(option); colorMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // Grados Brix
+            OutlinedTextField(
+                value = sampleState.gradosBrix,
+                onValueChange = { onBrixChange(it.filter { c -> c.isDigit() || c == '.' }) },
+                label = { Text("Grados Brix (°Bx)", color = Color.Black) },
+                textStyle = blackTextStyle,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Black,
+                    unfocusedBorderColor = Color.Black
+                )
+            )
+
+            // Prueba Acidez toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Prueba Acidez", fontWeight = FontWeight.Medium, color = Color.Black, fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (sampleState.pruebaAcidez) "Sí" else "No",
+                        color = Color.Black,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Switch(
+                        checked = sampleState.pruebaAcidez,
+                        onCheckedChange = { onPruebaAcidezChange(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color.Black,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = Color.Gray
+                        )
+                    )
+                }
+            }
+
+            // Acidez value (only shown when Prueba Acidez = Sí)
+            if (sampleState.pruebaAcidez) {
+                OutlinedTextField(
+                    value = sampleState.acidez,
+                    onValueChange = { onAcidezChange(it.filter { c -> c.isDigit() || c == '.' }) },
+                    label = { Text("Acidez titulable (%)", color = Color.Black) },
+                    textStyle = blackTextStyle,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        fontWeight = FontWeight.Bold,
+        color = Color.Black,
+        fontSize = 15.sp
+    )
+}
