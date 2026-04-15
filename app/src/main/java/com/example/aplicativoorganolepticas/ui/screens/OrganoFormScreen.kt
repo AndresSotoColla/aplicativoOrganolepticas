@@ -1,6 +1,8 @@
 package com.example.aplicativoorganolepticas.ui.screens
 
+import android.Manifest
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import coil.compose.AsyncImage
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
@@ -62,10 +66,33 @@ fun OrganoFormScreen(
     val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
     val translucidezOptions = (1..10).map { it * 10 }
 
-    // Camera launcher
-    var currentCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
+
+    // Camera launcher — takes picture and reports to ViewModel
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         viewModel.onPhotoTaken(success)
+    }
+
+    // Permission launcher — once granted, immediately opens the camera
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val uri = viewModel.prepareCameraForSample(viewModel.pendingSampleIndexForPermission)
+            cameraLauncher.launch(uri)
+        } else {
+            Toast.makeText(context, "Se necesita permiso de cámara para tomar fotos", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Helper to request camera permission or launch directly
+    fun launchCamera(sampleIndex: Int) {
+        val permission = Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+            val uri = viewModel.prepareCameraForSample(sampleIndex)
+            cameraLauncher.launch(uri)
+        } else {
+            viewModel.pendingSampleIndexForPermission = sampleIndex
+            permissionLauncher.launch(permission)
+        }
     }
 
     BackHandler { onBack() }
@@ -160,11 +187,7 @@ fun OrganoFormScreen(
                     onBrixChange = { viewModel.updateSampleBrix(i, it) },
                     onPruebaAcidezChange = { viewModel.updateSamplePruebaAcidez(i, it) },
                     onAcidezChange = { viewModel.updateSampleAcidez(i, it) },
-                    onTakePhoto = {
-                        val uri = viewModel.prepareCameraForSample(i)
-                        currentCameraUri = uri
-                        cameraLauncher.launch(uri)
-                    }
+                    onTakePhoto = { launchCamera(i) }
                 )
             }
 

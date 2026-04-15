@@ -73,8 +73,10 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
     // URI for pending camera capture (which sample)
     private var pendingSampleIndex by mutableIntStateOf(-1)
+    var pendingSampleIndexForPermission by mutableIntStateOf(-1)  // set before requesting permission
     var pendingPhotoUri by mutableStateOf<Uri?>(null)
         private set
+
 
     // ─── Database ──────────────────────────────────────────────────────────
     private val _records = dao.getAllRecords()
