@@ -89,7 +89,7 @@ interface OrganoDao {
     suspend fun clearCachedBlocks()
 }
 
-@Database(entities = [OrganoRecordEntity::class, CachedBlockEntity::class], version = 1, exportSchema = false)
+@Database(entities = [OrganoRecordEntity::class, CachedBlockEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun organoDao(): OrganoDao
 
