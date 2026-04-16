@@ -299,51 +299,13 @@ fun SampleCard(
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Muestra ${index + 1}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
-                // Foto thumbnail or camera button
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(DarkBeige)
-                        .border(1.dp, Color.Black.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                        .clickable { onTakePhoto() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (sampleState.fotoUri != null) {
-                        AsyncImage(
-                            model = sampleState.fotoUri,
-                            contentDescription = "Foto muestra ${index + 1}",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.CameraAlt,
-                                contentDescription = "Tomar foto",
-                                tint = Color.Black,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Text(
-                                text = "Foto",
-                                fontSize = 10.sp,
-                                color = Color.Black
-                            )
-                        }
-                    }
-                }
-            }
+            // Header
+            Text(
+                text = "Muestra ${index + 1}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
 
             // Peso Fruta
             OutlinedTextField(

@@ -85,7 +85,6 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        selectedAfectaciones.add("Ninguna")
         syncBlocks()
     }
 
@@ -152,26 +151,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         pendingPhotoUri = null
     }
 
-    // ─── Multi-select helpers ──────────────────────────────────────────────
-    fun onMejoradorToggle(item: String) {
-        if (selectedMejoradores.contains(item)) selectedMejoradores.remove(item)
-        else selectedMejoradores.add(item)
-    }
-
-    fun onAfectacionToggle(item: String) {
-        if (item == "Ninguna") {
-            selectedAfectaciones.clear()
-            selectedAfectaciones.add("Ninguna")
-        } else {
-            selectedAfectaciones.remove("Ninguna")
-            if (selectedAfectaciones.contains(item)) {
-                selectedAfectaciones.remove(item)
-                if (selectedAfectaciones.isEmpty()) selectedAfectaciones.add("Ninguna")
-            } else {
-                selectedAfectaciones.add(item)
-            }
-        }
-    }
+    // Multi-select helpers are now handled per-sample in updateSampleAfectacionToggle
 
     // ─── Network ───────────────────────────────────────────────────────────
     fun syncBlocks() {
