@@ -84,13 +84,12 @@ fun OrganoFormScreen(
     }
 
     // Helper to request camera permission or launch directly
-    fun launchCamera(sampleIndex: Int) {
+    fun launchCamera() {
         val permission = Manifest.permission.CAMERA
         if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
-            val uri = viewModel.prepareCameraForSample(sampleIndex)
+            val uri = viewModel.prepareCameraForGlobal()
             cameraLauncher.launch(uri)
         } else {
-            viewModel.pendingSampleIndexForPermission = sampleIndex
             permissionLauncher.launch(permission)
         }
     }
@@ -182,204 +181,64 @@ fun OrganoFormScreen(
                 SampleCard(
                     index = i,
                     sampleState = viewModel.samples[i],
+                    afectacionOptions = viewModel.afectacionOptions,
                     onPesoChange = { viewModel.updateSamplePeso(i, it) },
                     onColorChange = { viewModel.updateSampleColor(i, it) },
                     onBrixChange = { viewModel.updateSampleBrix(i, it) },
                     onPruebaAcidezChange = { viewModel.updateSamplePruebaAcidez(i, it) },
                     onAcidezChange = { viewModel.updateSampleAcidez(i, it) },
-                    onTakePhoto = { launchCamera(i) }
+                    onTranslucidezChange = { viewModel.updateSampleTranslucidez(i, it) },
+                    onCategoriaChange = { viewModel.updateSampleCategoria(i, it) },
+                    onAfectacionToggle = { viewModel.updateSampleAfectacionToggle(i, it) }
                 )
             }
 
-            // ── % AVANCE TRANSLUCIDEZ ────────────────────────────────────
-            SectionLabel("% Avance Translucidez")
-            ExposedDropdownMenuBox(
-                expanded = translucidezMenuExpanded,
-                onExpandedChange = { translucidezMenuExpanded = !translucidezMenuExpanded },
-                modifier = Modifier.fillMaxWidth()
+            // ── TOMAR FOTO ──────────────────────────────────────────────
+            SectionLabel("Foto del Registro")
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(2.dp, Color.Black, RoundedCornerShape(16.dp))
+                    .clickable { launchCamera() },
+                contentAlignment = Alignment.Center
             ) {
-                OutlinedTextField(
-                    value = "${viewModel.avanceTranslucidez}%",
-                    onValueChange = {},
-                    readOnly = true,
-                    textStyle = blackTextStyle,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = translucidezMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Black,
-                        unfocusedBorderColor = Color.Black
+                if (viewModel.globalFotoUri != null) {
+                    AsyncImage(
+                        model = viewModel.globalFotoUri,
+                        contentDescription = "Foto global",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
-                )
-                ExposedDropdownMenu(
-                    expanded = translucidezMenuExpanded,
-                    onDismissRequest = { translucidezMenuExpanded = false },
-                    modifier = Modifier.background(DarkBeige)
-                ) {
-                    translucidezOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text("$option%", color = Color.Black) },
-                            onClick = { viewModel.avanceTranslucidez = option; translucidezMenuExpanded = false },
-                            modifier = Modifier.background(DarkBeige)
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(48.dp)
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("TOCAR PARA TOMAR FOTO", fontWeight = FontWeight.Bold, color = Color.Black)
                     }
                 }
             }
 
-            // ── CATEGORÍA ────────────────────────────────────────────────
-            SectionLabel("Categoría")
-            ExposedDropdownMenuBox(
-                expanded = categoriaMenuExpanded,
-                onExpandedChange = { categoriaMenuExpanded = !categoriaMenuExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = viewModel.categoria,
-                    onValueChange = {},
-                    readOnly = true,
-                    textStyle = blackTextStyle,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoriaMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Black,
-                        unfocusedBorderColor = Color.Black
-                    )
+            // ── OBSERVACIONES ────────────────────────────────────────────
+            SectionLabel("Observaciones")
+            OutlinedTextField(
+                value = viewModel.observaciones,
+                onValueChange = { viewModel.observaciones = it },
+                label = { Text("Opcional", color = Color.Black) },
+                textStyle = blackTextStyle,
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Black,
+                    unfocusedBorderColor = Color.Black
                 )
-                ExposedDropdownMenu(
-                    expanded = categoriaMenuExpanded,
-                    onDismissRequest = { categoriaMenuExpanded = false },
-                    modifier = Modifier.background(DarkBeige)
-                ) {
-                    listOf("Especial", "Industria", "Jugo").forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option, color = Color.Black) },
-                            onClick = { viewModel.categoria = option; categoriaMenuExpanded = false },
-                            modifier = Modifier.background(DarkBeige)
-                        )
-                    }
-                }
-            }
-
-            // ── AFECTACIONES (multi) ─────────────────────────────────────
-            SectionLabel("Afectaciones")
-            ExposedDropdownMenuBox(
-                expanded = afectacionMenuExpanded,
-                onExpandedChange = { afectacionMenuExpanded = !afectacionMenuExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = if (viewModel.selectedAfectaciones.isEmpty()) "Ninguna" else viewModel.selectedAfectaciones.joinToString(", "),
-                    onValueChange = {},
-                    readOnly = true,
-                    textStyle = blackTextStyle,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectacionMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Black,
-                        unfocusedBorderColor = Color.Black
-                    )
-                )
-                ExposedDropdownMenu(
-                    expanded = afectacionMenuExpanded,
-                    onDismissRequest = { afectacionMenuExpanded = false },
-                    modifier = Modifier.background(DarkBeige)
-                ) {
-                    viewModel.afectacionOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(
-                                        checked = viewModel.selectedAfectaciones.contains(option),
-                                        onCheckedChange = null,
-                                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(option, color = Color.Black)
-                                }
-                            },
-                            onClick = { viewModel.onAfectacionToggle(option) },
-                            modifier = Modifier.background(DarkBeige)
-                        )
-                    }
-                }
-            }
-
-            // ── MEJORADOR (multi) ────────────────────────────────────────
-            SectionLabel("Mejorador")
-            ExposedDropdownMenuBox(
-                expanded = mejoradorMenuExpanded,
-                onExpandedChange = { mejoradorMenuExpanded = !mejoradorMenuExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = if (viewModel.selectedMejoradores.isEmpty()) "Seleccionar..." else viewModel.selectedMejoradores.joinToString(", "),
-                    onValueChange = {},
-                    readOnly = true,
-                    textStyle = blackTextStyle,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = mejoradorMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Black,
-                        unfocusedBorderColor = Color.Black
-                    )
-                )
-                ExposedDropdownMenu(
-                    expanded = mejoradorMenuExpanded,
-                    onDismissRequest = { mejoradorMenuExpanded = false },
-                    modifier = Modifier.background(DarkBeige)
-                ) {
-                    viewModel.mejoradorOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(
-                                        checked = viewModel.selectedMejoradores.contains(option),
-                                        onCheckedChange = null,
-                                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(option, color = Color.Black)
-                                }
-                            },
-                            onClick = { viewModel.onMejoradorToggle(option) },
-                            modifier = Modifier.background(DarkBeige)
-                        )
-                    }
-                }
-            }
-
-            // ── FIN PROTOCOLO MADURACIÓN ─────────────────────────────────
-            SectionLabel("Fin Protocolo Maduración")
-            ExposedDropdownMenuBox(
-                expanded = finProtMenuExpanded,
-                onExpandedChange = { finProtMenuExpanded = !finProtMenuExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = viewModel.finProtocoloMaduracion,
-                    onValueChange = {},
-                    readOnly = true,
-                    textStyle = blackTextStyle,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = finProtMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Black,
-                        unfocusedBorderColor = Color.Black
-                    )
-                )
-                ExposedDropdownMenu(
-                    expanded = finProtMenuExpanded,
-                    onDismissRequest = { finProtMenuExpanded = false },
-                    modifier = Modifier.background(DarkBeige)
-                ) {
-                    listOf("Sí", "No").forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option, color = Color.Black) },
-                            onClick = { viewModel.finProtocoloMaduracion = option; finProtMenuExpanded = false },
-                            modifier = Modifier.background(DarkBeige)
-                        )
-                    }
-                }
-            }
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -413,16 +272,24 @@ fun OrganoFormScreen(
 fun SampleCard(
     index: Int,
     sampleState: SampleState,
+    afectacionOptions: List<String>,
     onPesoChange: (String) -> Unit,
     onColorChange: (String) -> Unit,
     onBrixChange: (String) -> Unit,
     onPruebaAcidezChange: (Boolean) -> Unit,
     onAcidezChange: (String) -> Unit,
-    onTakePhoto: () -> Unit
+    onTranslucidezChange: (Int) -> Unit,
+    onCategoriaChange: (String) -> Unit,
+    onAfectacionToggle: (String) -> Unit
 ) {
     var colorMenuExpanded by remember { mutableStateOf(false) }
+    var translucidezMenuExpanded by remember { mutableStateOf(false) }
+    var categoriaMenuExpanded by remember { mutableStateOf(false) }
+    var afectacionMenuExpanded by remember { mutableStateOf(false) }
+
     val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
     val colorOptions = listOf("0.5", "1.0", "1.5", "2.0", "2.5", "≥3.0")
+    val translucidezOptions = (1..10).map { it * 10 }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -539,6 +406,109 @@ fun SampleCard(
                     unfocusedBorderColor = Color.Black
                 )
             )
+
+            // ── % AVANCE TRANSLUCIDEZ ──
+            Text("% Avance Translucidez", fontWeight = FontWeight.Medium, color = Color.Black, fontSize = 14.sp)
+            ExposedDropdownMenuBox(
+                expanded = translucidezMenuExpanded,
+                onExpandedChange = { translucidezMenuExpanded = !translucidezMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = "${sampleState.avanceTranslucidez}%",
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = translucidezMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Black, unfocusedBorderColor = Color.Black)
+                )
+                ExposedDropdownMenu(
+                    expanded = translucidezMenuExpanded,
+                    onDismissRequest = { translucidezMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    translucidezOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text("$option%", color = Color.Black) },
+                            onClick = { onTranslucidezChange(option); translucidezMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── CATEGORÍA ──
+            Text("Categoría", fontWeight = FontWeight.Medium, color = Color.Black, fontSize = 14.sp)
+            ExposedDropdownMenuBox(
+                expanded = categoriaMenuExpanded,
+                onExpandedChange = { categoriaMenuExpanded = !categoriaMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = sampleState.categoria,
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoriaMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Black, unfocusedBorderColor = Color.Black)
+                )
+                ExposedDropdownMenu(
+                    expanded = categoriaMenuExpanded,
+                    onDismissRequest = { categoriaMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    listOf("Especial", "Industria", "Jugo").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, color = Color.Black) },
+                            onClick = { onCategoriaChange(option); categoriaMenuExpanded = false },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
+
+            // ── AFECTACIONES (multi) ──
+            Text("Afectaciones", fontWeight = FontWeight.Medium, color = Color.Black, fontSize = 14.sp)
+            ExposedDropdownMenuBox(
+                expanded = afectacionMenuExpanded,
+                onExpandedChange = { afectacionMenuExpanded = !afectacionMenuExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = if (sampleState.afectaciones.isEmpty()) "Ninguna" else sampleState.afectaciones.joinToString(", "),
+                    onValueChange = {},
+                    readOnly = true,
+                    textStyle = blackTextStyle,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectacionMenuExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Black, unfocusedBorderColor = Color.Black)
+                )
+                ExposedDropdownMenu(
+                    expanded = afectacionMenuExpanded,
+                    onDismissRequest = { afectacionMenuExpanded = false },
+                    modifier = Modifier.background(DarkBeige)
+                ) {
+                    afectacionOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = sampleState.afectaciones.contains(option),
+                                        onCheckedChange = null,
+                                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(option, color = Color.Black)
+                                }
+                            },
+                            onClick = { onAfectacionToggle(option) },
+                            modifier = Modifier.background(DarkBeige)
+                        )
+                    }
+                }
+            }
 
             // Prueba Acidez toggle
             Row(

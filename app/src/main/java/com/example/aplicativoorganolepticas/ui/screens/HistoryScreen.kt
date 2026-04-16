@@ -21,6 +21,11 @@ import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
 import com.example.aplicativoorganolepticas.ui.viewmodel.OrganoViewModel
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -170,13 +175,32 @@ fun OrganoRecordItem(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+            Divider(color = Color.Black.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Global fields summary
-            HistoryRow("Categoría:", record.categoria)
-            HistoryRow("Translucidez:", "${record.avanceTranslucidez}%")
-            HistoryRow("Mejoradores:", record.mejoradores)
-            HistoryRow("Afectaciones:", record.afectaciones)
-            HistoryRow("Fin proto.:", record.finProtocoloMaduracion)
+            // Global Photo & Observations
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (record.fotoPath.isNotEmpty()) {
+                    AsyncImage(
+                        model = record.fotoPath,
+                        contentDescription = "Foto registro",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Observaciones:", fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 13.sp)
+                    Text(
+                        text = if (record.observaciones.isBlank()) "Sin observaciones" else record.observaciones,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Black.copy(alpha = 0.7f)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
             Divider(color = Color.Black.copy(alpha = 0.1f))
@@ -200,16 +224,35 @@ fun OrganoRecordItem(
                 Pair(record.m4PruebaAcidez, record.m4Acidez),
                 Pair(record.m5PruebaAcidez, record.m5Acidez)
             )
+            val translucidezData = listOf(record.m1AvanceTranslucidez, record.m2AvanceTranslucidez, record.m3AvanceTranslucidez, record.m4AvanceTranslucidez, record.m5AvanceTranslucidez)
+            val categoriaData = listOf(record.m1Categoria, record.m2Categoria, record.m3Categoria, record.m4Categoria, record.m5Categoria)
+            val afectacionesData = listOf(record.m1Afectaciones, record.m2Afectaciones, record.m3Afectaciones, record.m4Afectaciones, record.m5Afectaciones)
 
             sampleData.forEachIndexed { i, (peso, color, brix) ->
                 val (pruebaAcidez, acidez) = acidezData[i]
                 val acidezStr = if (pruebaAcidez) " | Acidez: $acidez%" else ""
-                Text(
-                    text = "M${i + 1}: ${peso}g  C.Ext: $color  Brix: $brix°$acidezStr",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Black,
-                    modifier = Modifier.padding(vertical = 1.dp)
-                )
+                val t = translucidezData[i]
+                val cat = categoriaData[i]
+                val af = afectacionesData[i]
+
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text(
+                        text = "M${i + 1}: ${peso}g | Brix: $brix°$acidezStr",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                    Text(
+                        text = "Color: $color | Trans.: $t% | Cat: $cat",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Black
+                    )
+                    Text(
+                        text = "Afectaciones: $af",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Black.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }

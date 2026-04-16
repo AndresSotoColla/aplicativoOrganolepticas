@@ -24,11 +24,12 @@ import java.io.File
 data class SampleState(
     val pesoFruta: String = "",
     val colorExterno: String = "1.0",
-    val fotoUri: Uri? = null,
-    val fotoPath: String = "",
     val gradosBrix: String = "",
     val pruebaAcidez: Boolean = false,
-    val acidez: String = ""
+    val acidez: String = "",
+    val avanceTranslucidez: Int = 10,
+    val categoria: String = "Especial",
+    val afectaciones: List<String> = listOf("Ninguna")
 )
 
 class OrganoViewModel(private val context: Context) : ViewModel() {
@@ -48,14 +49,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     // ─── Form State: Global Fields ─────────────────────────────────────────
     var bloque by mutableStateOf("")
     var numeroBin by mutableStateOf("")
-    var finProtocoloMaduracion by mutableStateOf("No")
-    var avanceTranslucidez by mutableStateOf(10)
-    var categoria by mutableStateOf("Especial")
+    var observaciones by mutableStateOf("")
+    var globalFotoPath by mutableStateOf("")
+    var globalFotoUri by mutableStateOf<Uri?>(null)
 
-    val selectedMejoradores = mutableStateListOf<String>()
     val mejoradorOptions = listOf("Dron", "Spray Boom")
-
-    val selectedAfectaciones = mutableStateListOf<String>()
     val afectacionOptions = listOf(
         "Daño mecánico",
         "Pudrición",
@@ -107,29 +105,50 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     fun updateSampleAcidez(index: Int, value: String) {
         samples[index] = samples[index].copy(acidez = value)
     }
+    fun updateSampleTranslucidez(index: Int, value: Int) {
+        samples[index] = samples[index].copy(avanceTranslucidez = value)
+    }
+    fun updateSampleCategoria(index: Int, value: String) {
+        samples[index] = samples[index].copy(categoria = value)
+    }
+    fun updateSampleAfectacionToggle(index: Int, item: String) {
+        val current = samples[index].afectaciones.toMutableList()
+        if (item == "Ninguna") {
+            current.clear()
+            current.add("Ninguna")
+        } else {
+            current.remove("Ninguna")
+            if (current.contains(item)) {
+                current.remove(item)
+                if (current.isEmpty()) current.add("Ninguna")
+            } else {
+                current.add(item)
+            }
+        }
+        samples[index] = samples[index].copy(afectaciones = current)
+    }
 
     // ─── Photo Handling ────────────────────────────────────────────────────
-    fun prepareCameraForSample(index: Int): Uri {
-        pendingSampleIndex = index
+    fun prepareCameraForGlobal(): Uri {
         val imageDir = File(context.externalCacheDir ?: context.cacheDir, "images").apply { mkdirs() }
-        val imageFile = File.createTempFile("muestra_${index + 1}_", ".jpg", imageDir)
+        val imageFile = File.createTempFile("organo_global_", ".jpg", imageDir)
         val uri = FileProvider.getUriForFile(
             context,
             "com.example.aplicativoorganolepticas.fileprovider",
             imageFile
         )
         pendingPhotoUri = uri
-        samples[index] = samples[index].copy(fotoPath = imageFile.absolutePath)
+        globalFotoPath = imageFile.absolutePath
         return uri
     }
 
+    // Deprecated for per-sample, but kept generic for permissions if needed
+    fun prepareCameraForSample(index: Int): Uri = prepareCameraForGlobal()
+
     fun onPhotoTaken(success: Boolean) {
-        if (success && pendingSampleIndex >= 0) {
-            val path = samples[pendingSampleIndex].fotoPath
-            val uri = pendingPhotoUri
-            samples[pendingSampleIndex] = samples[pendingSampleIndex].copy(fotoUri = uri, fotoPath = path)
+        if (success) {
+            globalFotoUri = pendingPhotoUri
         }
-        pendingSampleIndex = -1
         pendingPhotoUri = null
     }
 
@@ -182,41 +201,53 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 fechaRegistro = System.currentTimeMillis(),
                 bloque = bloque,
                 numeroBin = binNum,
-                mejoradores = if (selectedMejoradores.isEmpty()) "Ninguno" else selectedMejoradores.joinToString(", "),
-                finProtocoloMaduracion = finProtocoloMaduracion,
-                avanceTranslucidez = avanceTranslucidez,
-                categoria = categoria,
-                afectaciones = selectedAfectaciones.joinToString(", "),
+                fotoPath = globalFotoPath,
+                observaciones = observaciones,
+                // Muestra 1
                 m1PesoFruta = s[0].pesoFruta.toDoubleOrNull() ?: 0.0,
                 m1ColorExterno = s[0].colorExterno,
-                m1FotoPath = s[0].fotoPath,
                 m1GradosBrix = s[0].gradosBrix.toDoubleOrNull() ?: 0.0,
                 m1PruebaAcidez = s[0].pruebaAcidez,
                 m1Acidez = s[0].acidez.toDoubleOrNull() ?: 0.0,
+                m1AvanceTranslucidez = s[0].avanceTranslucidez,
+                m1Categoria = s[0].categoria,
+                m1Afectaciones = s[0].afectaciones.joinToString(", "),
+                // Muestra 2
                 m2PesoFruta = s[1].pesoFruta.toDoubleOrNull() ?: 0.0,
                 m2ColorExterno = s[1].colorExterno,
-                m2FotoPath = s[1].fotoPath,
                 m2GradosBrix = s[1].gradosBrix.toDoubleOrNull() ?: 0.0,
                 m2PruebaAcidez = s[1].pruebaAcidez,
                 m2Acidez = s[1].acidez.toDoubleOrNull() ?: 0.0,
+                m2AvanceTranslucidez = s[1].avanceTranslucidez,
+                m2Categoria = s[1].categoria,
+                m2Afectaciones = s[1].afectaciones.joinToString(", "),
+                // Muestra 3
                 m3PesoFruta = s[2].pesoFruta.toDoubleOrNull() ?: 0.0,
                 m3ColorExterno = s[2].colorExterno,
-                m3FotoPath = s[2].fotoPath,
                 m3GradosBrix = s[2].gradosBrix.toDoubleOrNull() ?: 0.0,
                 m3PruebaAcidez = s[2].pruebaAcidez,
                 m3Acidez = s[2].acidez.toDoubleOrNull() ?: 0.0,
+                m3AvanceTranslucidez = s[2].avanceTranslucidez,
+                m3Categoria = s[2].categoria,
+                m3Afectaciones = s[2].afectaciones.joinToString(", "),
+                // Muestra 4
                 m4PesoFruta = s[3].pesoFruta.toDoubleOrNull() ?: 0.0,
                 m4ColorExterno = s[3].colorExterno,
-                m4FotoPath = s[3].fotoPath,
                 m4GradosBrix = s[3].gradosBrix.toDoubleOrNull() ?: 0.0,
                 m4PruebaAcidez = s[3].pruebaAcidez,
                 m4Acidez = s[3].acidez.toDoubleOrNull() ?: 0.0,
+                m4AvanceTranslucidez = s[3].avanceTranslucidez,
+                m4Categoria = s[3].categoria,
+                m4Afectaciones = s[3].afectaciones.joinToString(", "),
+                // Muestra 5
                 m5PesoFruta = s[4].pesoFruta.toDoubleOrNull() ?: 0.0,
                 m5ColorExterno = s[4].colorExterno,
-                m5FotoPath = s[4].fotoPath,
                 m5GradosBrix = s[4].gradosBrix.toDoubleOrNull() ?: 0.0,
                 m5PruebaAcidez = s[4].pruebaAcidez,
-                m5Acidez = s[4].acidez.toDoubleOrNull() ?: 0.0
+                m5Acidez = s[4].acidez.toDoubleOrNull() ?: 0.0,
+                m5AvanceTranslucidez = s[4].avanceTranslucidez,
+                m5Categoria = s[4].categoria,
+                m5Afectaciones = s[4].afectaciones.joinToString(", ")
             )
             dao.insertRecord(record)
             clearForm()
@@ -241,12 +272,9 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     private fun clearForm() {
         bloque = ""
         numeroBin = ""
-        finProtocoloMaduracion = "No"
-        avanceTranslucidez = 10
-        categoria = "Especial"
-        selectedMejoradores.clear()
-        selectedAfectaciones.clear()
-        selectedAfectaciones.add("Ninguna")
+        observaciones = ""
+        globalFotoPath = ""
+        globalFotoUri = null
         for (i in 0 until 5) samples[i] = SampleState()
     }
 }
