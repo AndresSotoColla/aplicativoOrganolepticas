@@ -59,8 +59,7 @@ fun OrganoFormScreen(
         if (viewModel.bloque.isEmpty()) availableBlocks
         else availableBlocks.filter { it.contains(viewModel.bloque, ignoreCase = true) }
     }
-    val isBlockValid = (viewModel.bloque.startsWith("SC") || viewModel.bloque.startsWith("PC")) && 
-                        (availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque))
+    val isBlockValid = availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque)
 
     val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
     val translucidezOptions = (1..10).map { it * 10 }
@@ -131,7 +130,7 @@ fun OrganoFormScreen(
                         val processed = newValue.take(8).uppercase()
                         viewModel.bloque = processed
                     },
-                    label = { Text("SC... o PC... (8 carac. máx)", color = if (isBlockValid) Color.Black else Color.Red) },
+                    label = { Text("Bloque", color = if (isBlockValid) Color.Black else Color.Red) },
                     textStyle = blackTextStyle,
                     isError = viewModel.bloque.isNotEmpty() && !isBlockValid,
                     modifier = Modifier.menuAnchor().fillMaxWidth(),
@@ -506,7 +505,7 @@ fun SampleCard(
                 OutlinedTextField(
                     value = sampleState.acidez,
                     onValueChange = { onAcidezChange(it.filter { c -> c.isDigit() || c == '.' }) },
-                    label = { Text("Acidez titulable (%)", color = Color.Black) },
+                    label = { Text("Gasto Hidróxido de Sodio (ml)", color = Color.Black) },
                     textStyle = blackTextStyle,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),

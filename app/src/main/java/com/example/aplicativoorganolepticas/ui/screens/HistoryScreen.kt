@@ -293,7 +293,7 @@ fun OrganoRecordItem(
 
             sampleData.forEachIndexed { i, (peso, color, brix) ->
                 val (pruebaAcidez, acidez) = acidezData[i]
-                val acidezStr = if (pruebaAcidez) " | Acidez: $acidez%" else ""
+                val acidezStr = if (pruebaAcidez) " | Gasto: ${acidez}ml" else ""
                 val t = translucidezData[i]
                 val cat = categoriaData[i]
                 val af = afectacionesData[i]

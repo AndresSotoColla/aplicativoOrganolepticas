@@ -22,6 +22,9 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import android.util.Base64
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
 
 // State for each of the 5 samples
@@ -264,7 +267,10 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
                     val file = File(path)
                     if (file.exists()) {
-                        Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                        val bitmap = BitmapFactory.decodeFile(path)
+                        val outputStream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+                        Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
                     } else null
                 }
 
@@ -322,7 +328,12 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 try {
                     val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
                         val file = File(path)
-                        if (file.exists()) Base64.encodeToString(file.readBytes(), Base64.NO_WRAP) else null
+                        if (file.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(path)
+                            val outputStream = ByteArrayOutputStream()
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+                            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+                        } else null
                     }
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                     val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
