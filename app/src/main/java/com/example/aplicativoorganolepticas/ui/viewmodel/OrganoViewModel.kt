@@ -19,6 +19,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+import android.util.Base64
+import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
 
 // State for each of the 5 samples
 data class SampleState(
@@ -246,6 +250,110 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     fun exportToCsv(context: Context) {
         viewModelScope.launch {
             CsvExporter.exportAndShare(context, records.value)
+        }
+    }
+
+    // ─── Synchronization ──────────────────────────────────────────────────
+    var isUploading by mutableStateOf(false)
+        private set
+
+    fun uploadRecord(record: OrganoRecordEntity, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            isUploading = true
+            try {
+                val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
+                    val file = File(path)
+                    if (file.exists()) {
+                        Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    } else null
+                }
+
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
+
+                val request = OrganoUploadRequest(
+                    fecha_registro = sdf.format(Date(record.fechaRegistro)),
+                    bloque = record.bloque,
+                    numero_bin = record.numeroBin,
+                    observaciones = record.observaciones,
+                    usuario = usuario,
+                    foto_base64 = fotoBase64,
+                    // M1
+                    m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez, m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
+                    // M2
+                    m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez, m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
+                    // M3
+                    m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez, m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
+                    // M4
+                    m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez, m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
+                    // M5
+                    m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez, m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
+                )
+
+                val response = NetworkModule.apiService.uploadRecord(request)
+                if (response.status == "ok") {
+                    dao.updateSyncStatus(record.id, true)
+                    onResult(null)
+                } else {
+                    onResult(response.error ?: "Error desconocido en el servidor")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult("Error de red: ${e.message}")
+            } finally {
+                isUploading = false
+            }
+        }
+    }
+
+    fun uploadAllUnsyncedRecords(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val pending = records.value.filter { !it.isSynced }
+            if (pending.isEmpty()) {
+                onResult("No hay registros pendientes")
+                return@launch
+            }
+
+            isUploading = true
+            var successCount = 0
+            var errorCount = 0
+
+            pending.forEach { record ->
+                try {
+                    val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
+                        val file = File(path)
+                        if (file.exists()) Base64.encodeToString(file.readBytes(), Base64.NO_WRAP) else null
+                    }
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
+
+                    val request = OrganoUploadRequest(
+                        fecha_registro = sdf.format(Date(record.fechaRegistro)),
+                        bloque = record.bloque,
+                        numero_bin = record.numeroBin,
+                        observaciones = record.observaciones,
+                        usuario = usuario,
+                        foto_base64 = fotoBase64,
+                        m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez, m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
+                        m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez, m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
+                        m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez, m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
+                        m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez, m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
+                        m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez, m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
+                    )
+
+                    val response = NetworkModule.apiService.uploadRecord(request)
+                    if (response.status == "ok") {
+                        dao.updateSyncStatus(record.id, true)
+                        successCount++
+                    } else {
+                        errorCount++
+                    }
+                } catch (e: Exception) {
+                    errorCount++
+                }
+            }
+            isUploading = false
+            onResult("Sincronización terminada: $successCount exitosos, $errorCount errores")
         }
     }
 

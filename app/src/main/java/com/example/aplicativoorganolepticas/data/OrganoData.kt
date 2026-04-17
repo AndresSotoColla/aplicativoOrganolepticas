@@ -56,7 +56,8 @@ data class OrganoRecordEntity(
     val m5Acidez: Double = 0.0,
     val m5AvanceTranslucidez: Int = 10,
     val m5Categoria: String = "Especial",
-    val m5Afectaciones: String = "Ninguna"
+    val m5Afectaciones: String = "Ninguna",
+    val isSynced: Boolean = false
 )
 
 @Entity(tableName = "cached_blocks")
@@ -75,6 +76,9 @@ interface OrganoDao {
     @Delete
     suspend fun deleteRecord(record: OrganoRecordEntity): Int
 
+    @Query("UPDATE organo_records SET isSynced = :synced WHERE id = :recordId")
+    suspend fun updateSyncStatus(recordId: Int, synced: Boolean)
+
     @Query("DELETE FROM organo_records")
     suspend fun deleteAll()
 
@@ -89,7 +93,7 @@ interface OrganoDao {
     suspend fun clearCachedBlocks()
 }
 
-@Database(entities = [OrganoRecordEntity::class, CachedBlockEntity::class], version = 2, exportSchema = false)
+@Database(entities = [OrganoRecordEntity::class, CachedBlockEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun organoDao(): OrganoDao
 

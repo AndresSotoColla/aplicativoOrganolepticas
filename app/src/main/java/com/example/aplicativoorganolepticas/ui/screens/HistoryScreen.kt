@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +40,8 @@ fun HistoryScreen(
     val records by viewModel.records.collectAsState()
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var recordToDelete by remember { mutableStateOf<OrganoRecordEntity?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     BackHandler { onBack() }
 
@@ -51,6 +55,18 @@ fun HistoryScreen(
                     }
                 },
                 actions = {
+                    if (records.any { !it.isSynced }) {
+                        IconButton(
+                            onClick = {
+                                viewModel.uploadAllUnsyncedRecords { msg ->
+                                    coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                }
+                            },
+                            enabled = !viewModel.isUploading
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = "Sincronizar todo", tint = Color.Black)
+                        }
+                    }
                     if (records.isNotEmpty()) {
                         IconButton(onClick = { showDeleteAllDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Borrar todo", tint = Color.Black)
@@ -60,9 +76,17 @@ fun HistoryScreen(
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = LightBeige)
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = LightBeige
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            if (viewModel.isUploading) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    color = Color.Black,
+                    trackColor = Color.Black.copy(alpha = 0.1f)
+                )
+            }
             if (records.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -91,7 +115,15 @@ fun HistoryScreen(
                     items(records) { record ->
                         OrganoRecordItem(
                             record = record,
-                            onDelete = { recordToDelete = record }
+                            onDelete = { recordToDelete = record },
+                            onUpload = {
+                                viewModel.uploadRecord(record) { error ->
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(error ?: "Registro sincronizado")
+                                    }
+                                }
+                            },
+                            isUploading = viewModel.isUploading
                         )
                     }
                 }
@@ -141,7 +173,9 @@ fun HistoryScreen(
 @Composable
 fun OrganoRecordItem(
     record: OrganoRecordEntity,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onUpload: () -> Unit,
+    isUploading: Boolean
 ) {
     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
@@ -171,6 +205,34 @@ fun OrganoRecordItem(
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Borrar", tint = Color.Red.copy(alpha = 0.7f))
+                }
+            }
+
+            // Sync Status & Upload Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (record.isSynced) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Sincronizado",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Sincronizado", color = Color(0xFF4CAF50), fontSize = 12.sp)
+                } else {
+                    TextButton(
+                        onClick = onUpload,
+                        enabled = !isUploading,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Subir a API", color = Color.Black, fontSize = 12.sp)
+                    }
                 }
             }
 
