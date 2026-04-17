@@ -283,7 +283,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                     numero_bin = record.numeroBin,
                     observaciones = record.observaciones,
                     usuario = usuario,
-                    foto_base64 = fotoBase64,
+                    fotografia = fotoBase64,
                     // M1
                     m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez, m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
                     // M2
@@ -344,7 +344,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                         numero_bin = record.numeroBin,
                         observaciones = record.observaciones,
                         usuario = usuario,
-                        foto_base64 = fotoBase64,
+                        fotografia = fotoBase64,
                         m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez, m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
                         m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez, m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
                         m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez, m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,

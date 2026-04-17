@@ -18,7 +18,7 @@ data class OrganoUploadRequest(
     val numero_bin: Int,
     val observaciones: String,
     val usuario: String,
-    val foto_base64: String? = null,
+    val fotografia: String? = null,
     // Muestras
     val m1_peso: Double, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: Int, val m1_categoria: String, val m1_afectaciones: String,
     val m2_peso: Double, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: Int, val m2_categoria: String, val m2_afectaciones: String,
