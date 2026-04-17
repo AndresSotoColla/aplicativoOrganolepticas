@@ -422,7 +422,7 @@ fun SampleCard(
                     onDismissRequest = { categoriaMenuExpanded = false },
                     modifier = Modifier.background(DarkBeige)
                 ) {
-                    listOf("Especial", "Industria", "Jugo").forEach { option ->
+                    listOf("Especial", "Industria", "Jugos").forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option, color = Color.Black) },
                             onClick = { onCategoriaChange(option); categoriaMenuExpanded = false },

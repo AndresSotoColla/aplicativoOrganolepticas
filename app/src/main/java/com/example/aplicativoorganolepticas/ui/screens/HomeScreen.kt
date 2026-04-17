@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
@@ -41,12 +42,14 @@ fun HomeScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
                 text = "Muestreo de Fruta",
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.Black.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 48.dp)
             )
 
