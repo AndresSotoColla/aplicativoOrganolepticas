@@ -33,6 +33,7 @@ data class UploadResponse(
     val error: String? = null
 )
 
+interface OrganoApiService {
     @GET("consultor/api/cronograma_semana_organolepticas")
     suspend fun getCronograma(): List<CronogramaItem>
 
