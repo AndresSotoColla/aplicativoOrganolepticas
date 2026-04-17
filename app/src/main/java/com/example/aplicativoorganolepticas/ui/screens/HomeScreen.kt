@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
+import com.example.aplicativoorganolepticas.ui.components.VideoBackground
+import com.example.aplicativoorganolepticas.R
 
 @Composable
 fun HomeScreen(
@@ -29,11 +31,22 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(LightBeige)
-            .padding(24.dp)
+            .background(Color.Black)
     ) {
+        // Video de fondo
+        VideoBackground(videoResId = R.raw.pineapple_bg)
+
+        // Overlay oscuro para legibilidad
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+        )
+
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -41,14 +54,14 @@ fun HomeScreen(
                 text = "Evaluación Organoléptica",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black,
+                color = Color.White,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
                 text = "Muestreo de Fruta",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.Black.copy(alpha = 0.6f),
+                color = Color.White.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 48.dp)
             )
