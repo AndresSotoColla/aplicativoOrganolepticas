@@ -210,8 +210,8 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         val binNum = numeroBin.toIntOrNull()
         val isBlockValid = (bloque.startsWith("SC") || bloque.startsWith("PC")) && 
                            bloque.drop(2).all { it.isDigit() } && 
-                           bloque.length > 2
-        if (!isBlockValid) { onResult("El bloque debe iniciar con PC o SC seguido de números (Eje: PC1234)"); return }
+                           bloque.length == 8
+        if (!isBlockValid) { onResult("El bloque debe tener exactamente 8 caracteres (Eje: PC123456)"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
 
         // Validate weight <= 400
