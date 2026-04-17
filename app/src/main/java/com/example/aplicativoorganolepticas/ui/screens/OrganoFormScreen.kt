@@ -59,7 +59,10 @@ fun OrganoFormScreen(
         if (viewModel.bloque.isEmpty()) availableBlocks
         else availableBlocks.filter { it.contains(viewModel.bloque, ignoreCase = true) }
     }
-    val isBlockValid = availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque)
+    val isBlockValid = (viewModel.bloque.startsWith("SC") || viewModel.bloque.startsWith("PC")) && 
+                        viewModel.bloque.drop(2).all { it.isDigit() } &&
+                        viewModel.bloque.length > 2 &&
+                        (availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque))
 
     val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
     val translucidezOptions = (1..10).map { it * 10 }
@@ -130,7 +133,7 @@ fun OrganoFormScreen(
                         val processed = newValue.take(8).uppercase()
                         viewModel.bloque = processed
                     },
-                    label = { Text("Bloque", color = if (isBlockValid) Color.Black else Color.Red) },
+                    label = { Text("Bloque (Eje: PC1234)", color = if (isBlockValid) Color.Black else Color.Red) },
                     textStyle = blackTextStyle,
                     isError = viewModel.bloque.isNotEmpty() && !isBlockValid,
                     modifier = Modifier.menuAnchor().fillMaxWidth(),

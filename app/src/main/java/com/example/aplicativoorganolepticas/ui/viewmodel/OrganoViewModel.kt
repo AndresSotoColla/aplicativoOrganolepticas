@@ -208,7 +208,10 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     // ─── Save ──────────────────────────────────────────────────────────────
     fun saveRecord(onResult: (String?) -> Unit) {
         val binNum = numeroBin.toIntOrNull()
-        if (bloque.isBlank()) { onResult("Ingrese un bloque válido"); return }
+        val isBlockValid = (bloque.startsWith("SC") || bloque.startsWith("PC")) && 
+                           bloque.drop(2).all { it.isDigit() } && 
+                           bloque.length > 2
+        if (!isBlockValid) { onResult("El bloque debe iniciar con PC o SC seguido de números (Eje: PC1234)"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
 
         // Validate weight <= 400
