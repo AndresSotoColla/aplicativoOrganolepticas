@@ -62,13 +62,42 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
     val mejoradorOptions = listOf("Dron", "Spray Boom")
     val afectacionOptions = listOf(
-        "Daño mecánico",
-        "Pudrición",
-        "Sobremadurez",
-        "Mancha",
-        "Deshidratación",
-        "Quemadura solar",
-        "Ninguna"
+        "Base Café Tolerable",
+        "Base Café No Tolerable",
+        "Cicatriz",
+        "Cochinilla Externa",
+        "Cónica",
+        "Corchosis",
+        "Corona Grande",
+        "Corona Maltratada",
+        "Corona Pequeña",
+        "Corona Quemada",
+        "Corona Torcida Tolerable",
+        "Corona Torcida No Tolerable",
+        "Coronas Múltiples",
+        "Cuello Tolerable",
+        "Cuello No Tolerable",
+        "Daño Animales",
+        "Daño Insectos",
+        "Daño Mecánico",
+        "Deforme",
+        "Fruta con Golpe",
+        "Gomosis",
+        "Pedúnculo Viejo",
+        "Pedúnculo Humedo Acuoso",
+        "Quema de Sol Tolerable",
+        "Quema de Sol No Tolerable",
+        "Sobremadura",
+        "Off-Color Tolerable",
+        "Off-Color No Tolerable",
+        "Cochinilla Interna",
+        "Enfermedad",
+        "Golpe de Agua Leve",
+        "Golpe de Agua Severo",
+        "Gomosis Interna",
+        "Levadura",
+        "Sin Defecto",
+        "Fruta Sucia"
     )
 
     // ─── Form State: 5 Samples ─────────────────────────────────────────────
@@ -181,6 +210,15 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         val binNum = numeroBin.toIntOrNull()
         if (bloque.isBlank()) { onResult("Ingrese un bloque válido"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
+
+        // Validate weight <= 400
+        samples.forEachIndexed { index, sample ->
+            val peso = sample.pesoFruta.toDoubleOrNull() ?: 0.0
+            if (peso > 400) {
+                onResult("El peso de la muestra ${index + 1} no puede ser mayor a 400g")
+                return
+            }
+        }
 
         val s = samples
         viewModelScope.launch {

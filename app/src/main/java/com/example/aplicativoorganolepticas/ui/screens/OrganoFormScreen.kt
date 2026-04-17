@@ -308,17 +308,20 @@ fun SampleCard(
                 color = Color.Black
             )
 
-            // Peso Fruta
+            val pesoValue = sampleState.pesoFruta.toDoubleOrNull() ?: 0.0
+            val isPesoError = pesoValue > 400
             OutlinedTextField(
                 value = sampleState.pesoFruta,
                 onValueChange = { onPesoChange(it.filter { c -> c.isDigit() || c == '.' }) },
-                label = { Text("Peso Fruta (g)", color = Color.Black) },
+                label = { Text("Peso Fruta (g)", color = if (isPesoError) Color.Red else Color.Black) },
                 textStyle = blackTextStyle,
+                isError = isPesoError,
+                supportingText = { if (isPesoError) Text("El peso no puede ser > 400g", color = Color.Red) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Black,
-                    unfocusedBorderColor = Color.Black
+                    focusedBorderColor = if (isPesoError) Color.Red else Color.Black,
+                    unfocusedBorderColor = if (isPesoError) Color.Red else Color.Black
                 )
             )
 
