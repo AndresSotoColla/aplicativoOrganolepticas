@@ -5,6 +5,8 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 data class CronogramaItem(
     val bloque: String,
@@ -41,6 +43,7 @@ interface OrganoApiService {
     suspend fun uploadRecord(@retrofit2.http.Body request: OrganoUploadRequest): UploadResponse
 }
 
+
 object NetworkModule {
     private const val BASE_URL = "https://interno.control.agricolaguapa.com/"
 
@@ -48,9 +51,16 @@ object NetworkModule {
         .add(KotlinJsonAdapterFactory())
         .build()
 
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     val apiService: OrganoApiService by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
+            .client(client)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(OrganoApiService::class.java)

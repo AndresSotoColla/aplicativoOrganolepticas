@@ -312,14 +312,14 @@ fun SampleCard(
             )
 
             val pesoValue = sampleState.pesoFruta.toDoubleOrNull() ?: 0.0
-            val isPesoError = pesoValue > 400
+            val isPesoError = pesoValue > 5000
             OutlinedTextField(
                 value = sampleState.pesoFruta,
                 onValueChange = { onPesoChange(it.filter { c -> c.isDigit() || c == '.' }) },
                 label = { Text("Peso Fruta (g)", color = if (isPesoError) Color.Red else Color.Black) },
                 textStyle = blackTextStyle,
                 isError = isPesoError,
-                supportingText = { if (isPesoError) Text("El peso no puede ser > 400g", color = Color.Red) },
+                supportingText = { if (isPesoError) Text("El peso no puede ser > 5000g", color = Color.Red) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -451,8 +451,9 @@ fun SampleCard(
                     readOnly = true,
                     textStyle = blackTextStyle,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectacionMenuExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Black, unfocusedBorderColor = Color.Black)
+                    modifier = Modifier.menuAnchor().fillMaxWidth().heightIn(min = 56.dp, max = 150.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Black, unfocusedBorderColor = Color.Black),
+                    singleLine = false
                 )
                 ExposedDropdownMenu(
                     expanded = afectacionMenuExpanded,

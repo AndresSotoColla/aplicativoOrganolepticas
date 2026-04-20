@@ -214,11 +214,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         if (!isBlockValid) { onResult("El bloque debe tener exactamente 8 caracteres (Eje: PC123456)"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
 
-        // Validate weight <= 400
+        // Validate weight <= 5000
         samples.forEachIndexed { index, sample ->
             val peso = sample.pesoFruta.toDoubleOrNull() ?: 0.0
-            if (peso > 400) {
-                onResult("El peso de la muestra ${index + 1} no puede ser mayor a 400g")
+            if (peso > 5000) {
+                onResult("El peso de la muestra ${index + 1} no puede ser mayor a 5000g")
                 return
             }
         }
@@ -305,15 +305,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             isUploading = true
             try {
-                val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
-                    val file = File(path)
-                    if (file.exists()) {
-                        val bitmap = BitmapFactory.decodeFile(path)
-                        val outputStream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
-                        Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                    } else null
-                }
+                val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
 
                 val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
@@ -367,15 +359,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
             pending.forEach { record ->
                 try {
-                    val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { path ->
-                        val file = File(path)
-                        if (file.exists()) {
-                            val bitmap = BitmapFactory.decodeFile(path)
-                            val outputStream = ByteArrayOutputStream()
-                            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
-                            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                        } else null
-                    }
+                    val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                     val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
 
@@ -416,5 +400,31 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         globalFotoPath = ""
         globalFotoUri = null
         for (i in 0 until 5) samples[i] = SampleState()
+    }
+
+    private fun getScaledBase64(path: String): String? {
+        val file = File(path)
+        if (!file.exists()) return null
+        return try {
+            val options = BitmapFactory.Options()
+            options.inJustDecodeBounds = true
+            BitmapFactory.decodeFile(path, options)
+
+            var scale = 1
+            while (options.outWidth / scale / 2 >= 1024 && options.outHeight / scale / 2 >= 1024) {
+                scale *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options()
+            decodeOptions.inSampleSize = scale
+            val bitmap = BitmapFactory.decodeFile(path, decodeOptions) ?: return null
+
+            val outputStream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 }
