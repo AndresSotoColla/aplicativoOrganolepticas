@@ -1,6 +1,7 @@
 package com.example.aplicativoorganolepticas
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,7 +38,12 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 onNavigateToForm = { navController.navigate("form") },
                                 onNavigateToHistory = { navController.navigate("history") },
-                                onExport = { viewModel.exportToCsv(this@MainActivity) }
+                                onExport = { viewModel.exportToCsv(this@MainActivity) },
+                                onLoadGroups = { uri ->
+                                    viewModel.loadBlocksFromExcel(uri, this@MainActivity) { msg ->
+                                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             )
                         }
                         composable("form") {

@@ -7,8 +7,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,8 +30,14 @@ import com.example.aplicativoorganolepticas.R
 fun HomeScreen(
     onNavigateToForm: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    onLoadGroups: (Uri) -> Unit
 ) {
+    val excelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            onLoadGroups(uri)
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -89,6 +99,23 @@ fun HomeScreen(
                 icon = Icons.Default.Download,
                 color = DarkBeige,
                 onClick = onExport
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            HomeButton(
+                text = "Cargar Grupos",
+                icon = Icons.Default.UploadFile,
+                color = DarkBeige,
+                onClick = {
+                    excelLauncher.launch(
+                        arrayOf(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel",
+                            "application/octet-stream"
+                        )
+                    )
+                }
             )
         }
     }

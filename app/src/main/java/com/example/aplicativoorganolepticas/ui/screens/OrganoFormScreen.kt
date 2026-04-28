@@ -59,10 +59,7 @@ fun OrganoFormScreen(
         if (viewModel.bloque.isEmpty()) availableBlocks
         else availableBlocks.filter { it.contains(viewModel.bloque, ignoreCase = true) }
     }
-    val isBlockValid = (viewModel.bloque.startsWith("SC") || viewModel.bloque.startsWith("PC")) && 
-                        viewModel.bloque.drop(2).all { it.isDigit() } &&
-                        viewModel.bloque.length == 8 &&
-                        (availableBlocks.isEmpty() || availableBlocks.contains(viewModel.bloque))
+    val isBlockValid = viewModel.bloque.isNotEmpty() && availableBlocks.contains(viewModel.bloque)
 
     val blackTextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
     val translucidezOptions = (1..10).map { it * 10 }
@@ -133,9 +130,16 @@ fun OrganoFormScreen(
                         val processed = newValue.take(8).uppercase()
                         viewModel.bloque = processed
                     },
-                    label = { Text("Bloque (Eje: PC123456)", color = if (isBlockValid) Color.Black else Color.Red) },
+                    label = { Text("Bloque", color = if (viewModel.bloque.isNotEmpty() && !isBlockValid) Color.Red else Color.Black) },
                     textStyle = blackTextStyle,
                     isError = viewModel.bloque.isNotEmpty() && !isBlockValid,
+                    supportingText = {
+                        if (viewModel.bloque.isNotEmpty() && !isBlockValid) {
+                            Text("El bloque no existe en la lista de grupos cargada", color = Color.Red)
+                        } else if (availableBlocks.isEmpty()) {
+                            Text("No se han cargado grupos. Ve a Inicio y carga un Excel.", color = Color.Red)
+                        }
+                    },
                     modifier = Modifier.menuAnchor().fillMaxWidth(),
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = blockMenuExpanded) },
                     colors = OutlinedTextFieldDefaults.colors(

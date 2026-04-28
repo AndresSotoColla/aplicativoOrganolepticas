@@ -26,6 +26,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
+import org.apache.poi.ss.usermodel.WorkbookFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // State for each of the 5 samples
 data class SampleState(
@@ -121,7 +124,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        syncBlocks()
+        // syncBlocks() ya no se llama automáticamente para priorizar Excel
     }
 
     // ─── Sample Updates ────────────────────────────────────────────────────
@@ -205,13 +208,72 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    // ─── Cargar Bloques de Excel ───────────────────────────────────────────
+    fun loadBlocksFromExcel(uri: Uri, context: Context, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val blocks = withContext(Dispatchers.IO) {
+                    val extractedBlocks = mutableListOf<String>()
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val workbook = WorkbookFactory.create(inputStream)
+                        val sheet = workbook.getSheetAt(0)
+                        
+                        // Buscar índice de columna "Bloque"
+                        var blockColumnIndex = -1
+                        val headerRow = sheet.getRow(0)
+                        if (headerRow != null) {
+                            for (cell in headerRow) {
+                                if (cell.stringCellValue.trim().equals("Bloque", ignoreCase = true)) {
+                                    blockColumnIndex = cell.columnIndex
+                                    break
+                                }
+                            }
+                        }
+                        
+                        if (blockColumnIndex != -1) {
+                            // Leer filas
+                            for (i in 1..sheet.lastRowNum) {
+                                val row = sheet.getRow(i)
+                                if (row != null) {
+                                    val cell = row.getCell(blockColumnIndex)
+                                    if (cell != null) {
+                                        val value = when (cell.cellType) {
+                                            org.apache.poi.ss.usermodel.CellType.STRING -> cell.stringCellValue.trim()
+                                            org.apache.poi.ss.usermodel.CellType.NUMERIC -> cell.numericCellValue.toLong().toString()
+                                            else -> ""
+                                        }
+                                        if (value.isNotEmpty()) {
+                                            extractedBlocks.add(value)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        workbook.close()
+                    }
+                    extractedBlocks
+                }
+                
+                if (blocks.isNotEmpty()) {
+                    val entities = blocks.map { CachedBlockEntity(it) }
+                    dao.clearCachedBlocks()
+                    dao.insertBlocks(entities)
+                    onResult("Se cargaron ${blocks.size} bloques exitosamente")
+                } else {
+                    onResult("Error: No se encontraron bloques o la columna 'Bloque' no existe")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult("Error al leer el archivo Excel: ${e.message}")
+            }
+        }
+    }
+
     // ─── Save ──────────────────────────────────────────────────────────────
     fun saveRecord(onResult: (String?) -> Unit) {
         val binNum = numeroBin.toIntOrNull()
-        val isBlockValid = (bloque.startsWith("SC") || bloque.startsWith("PC")) && 
-                           bloque.drop(2).all { it.isDigit() } && 
-                           bloque.length == 8
-        if (!isBlockValid) { onResult("El bloque debe tener exactamente 8 caracteres (Eje: PC123456)"); return }
+        val isBlockValid = availableBlocks.value.contains(bloque)
+        if (!isBlockValid) { onResult("El bloque ingresado no existe en la lista de grupos cargada"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
 
         // Validate weight <= 5000
