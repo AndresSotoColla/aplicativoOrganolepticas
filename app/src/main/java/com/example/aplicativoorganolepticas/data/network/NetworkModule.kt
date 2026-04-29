@@ -17,16 +17,16 @@ data class CronogramaItem(
 data class OrganoUploadRequest(
     val fecha_registro: String,
     val bloque: String,
-    val numero_bin: Int,
+    val numero_bin: String,
     val observaciones: String,
     val usuario: String,
     val fotografia: String? = null,
     // Muestras
-    val m1_peso: Double, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: Int, val m1_categoria: String, val m1_afectaciones: String,
-    val m2_peso: Double, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: Int, val m2_categoria: String, val m2_afectaciones: String,
-    val m3_peso: Double, val m3_color: String, val m3_brix: Double, val m3_acidez: Double, val m3_translucidez: Int, val m3_categoria: String, val m3_afectaciones: String,
-    val m4_peso: Double, val m4_color: String, val m4_brix: Double, val m4_acidez: Double, val m4_translucidez: Int, val m4_categoria: String, val m4_afectaciones: String,
-    val m5_peso: Double, val m5_color: String, val m5_brix: Double, val m5_acidez: Double, val m5_translucidez: Int, val m5_categoria: String, val m5_afectaciones: String
+    val m1_peso: Double, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: String, val m1_categoria: String, val m1_afectaciones: String,
+    val m2_peso: Double, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: String, val m2_categoria: String, val m2_afectaciones: String,
+    val m3_peso: Double, val m3_color: String, val m3_brix: Double, val m3_acidez: Double, val m3_translucidez: String, val m3_categoria: String, val m3_afectaciones: String,
+    val m4_peso: Double, val m4_color: String, val m4_brix: Double, val m4_acidez: Double, val m4_translucidez: String, val m4_categoria: String, val m4_afectaciones: String,
+    val m5_peso: Double, val m5_color: String, val m5_brix: Double, val m5_acidez: Double, val m5_translucidez: String, val m5_categoria: String, val m5_afectaciones: String
 )
 
 data class UploadResponse(
