@@ -1,0 +1,75 @@
+
+$url = "https://interno.control.agricolaguapa.com/consultor/cargue_json_organolepticas"
+[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+function Test-Payload($body) {
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method Post -Body ($body | ConvertTo-Json -Depth 10) -ContentType "application/json" -ErrorAction Stop
+        return $response
+    } catch {
+        return $_.Exception.Response.GetResponseStream() | %{ (New-Object IO.StreamReader($_)).ReadToEnd() }
+    }
+}
+
+$payload = @{
+    fecha_registro = "2026-04-29"
+    bloque = "Prueba"
+    numero_bin = 1
+    observaciones = ""
+    usuario = "Test"
+    m1_peso = 1.0
+    m1_color = "1.0"
+    m1_brix = 1.0
+    m1_acidez = 1.0
+    m1_translucidez = 1
+    m1_categoria = "Especial"
+    m1_afectaciones = "Ninguna"
+    m2_peso = 1.0
+    m2_color = "1.0"
+    m2_brix = 1.0
+    m2_acidez = 1.0
+    m2_translucidez = 1
+    m2_categoria = "Especial"
+    m2_afectaciones = "Ninguna"
+    m3_peso = 1.0
+    m3_color = "1.0"
+    m3_brix = 1.0
+    m3_acidez = 1.0
+    m3_translucidez = 1
+    m3_categoria = "Especial"
+    m3_afectaciones = "Ninguna"
+    m4_peso = 1.0
+    m4_color = "1.0"
+    m4_brix = 1.0
+    m4_acidez = 1.0
+    m4_translucidez = 1
+    m4_categoria = "Especial"
+    m4_afectaciones = "Ninguna"
+    m5_peso = 1.0
+    m5_color = "1.0"
+    m5_brix = 1.0
+    m5_acidez = 1.0
+    m5_translucidez = 1
+    m5_categoria = "Especial"
+    m5_afectaciones = "Ninguna"
+}
+
+Write-Host "Test 1 (All Ints):" (Test-Payload $payload)
+
+$payload.numero_bin = "1"
+Write-Host "Test 2 (numero_bin string):" (Test-Payload $payload)
+
+$payload.m1_translucidez = "1"
+$payload.m2_translucidez = "1"
+$payload.m3_translucidez = "1"
+$payload.m4_translucidez = "1"
+$payload.m5_translucidez = "1"
+Write-Host "Test 3 (all ints as string):" (Test-Payload $payload)
+
+$payload.m1_peso = "1.0"
+$payload.m2_peso = "1.0"
+$payload.m3_peso = "1.0"
+$payload.m4_peso = "1.0"
+$payload.m5_peso = "1.0"
+Write-Host "Test 4 (peso as string):" (Test-Payload $payload)
+

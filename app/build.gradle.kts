@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
+    implementation(libs.okhttp.logging)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

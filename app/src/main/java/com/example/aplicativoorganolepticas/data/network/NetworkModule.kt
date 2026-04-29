@@ -65,9 +65,16 @@ object NetworkModule {
             sslContext.init(null, trustAllCerts, java.security.SecureRandom())
             val sslSocketFactory = sslContext.socketFactory
 
+            val loggingInterceptor = okhttp3.logging.HttpLoggingInterceptor { message ->
+                android.util.Log.d("RetrofitLog", message)
+            }.apply {
+                level = okhttp3.logging.HttpLoggingInterceptor.Level.BODY
+            }
+
             return OkHttpClient.Builder()
                 .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
                 .hostnameVerifier { _, _ -> true }
+                .addInterceptor(loggingInterceptor)
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
