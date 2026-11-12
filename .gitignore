@@ -15,7 +15,7 @@
 local.properties
 
 # APK con Ctrl+Shift+B (skill apk-ctrl-shift-b)
-apk/
+/apk/
 keystore.properties
 *.jks
 *.keystore
