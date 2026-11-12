@@ -1,13 +1,22 @@
 package com.example.aplicativoorganolepticas.ui.viewmodel
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import android.util.Base64
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -178,6 +187,40 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         pendingPhotoPath = null
     }
 
+    // ─── GPS (mientras el formulario de registro nuevo está abierto) ───────
+    var ubicacion by mutableStateOf<Location?>(null)
+        private set
+    private val locationManager get() = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    // Se queda con la lectura más precisa, o con la nueva si la anterior ya tiene más de 30 s.
+    private val gpsListener = LocationListener { loc ->
+        val actual = ubicacion
+        if (actual == null || loc.accuracy <= actual.accuracy || loc.time - actual.time > 30_000) ubicacion = loc
+    }
+
+    fun tienePermisoGps(): Boolean = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+
+    fun ubicacionActivada(): Boolean = LocationManagerCompat.isLocationEnabled(locationManager)
+
+    @SuppressLint("MissingPermission")
+    fun iniciarGps() {
+        if (!tienePermisoGps()) return
+        val lm = locationManager
+        val proveedores = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter { it in lm.allProviders }
+        // Arranca con la última ubicación conocida si es de hace menos de 2 minutos
+        ubicacion = proveedores.mapNotNull { lm.getLastKnownLocation(it) }
+            .filter { System.currentTimeMillis() - it.time < 120_000 }
+            .minByOrNull { it.accuracy }
+        proveedores.forEach { lm.requestLocationUpdates(it, 2_000L, 0f, gpsListener, Looper.getMainLooper()) }
+    }
+
+    fun detenerGps() {
+        locationManager.removeUpdates(gpsListener)
+        ubicacion = null
+    }
+
+    override fun onCleared() = detenerGps()
+
     // ─── Formulario <-> registro ───────────────────────────────────────────
     private fun formToEntity(base: OrganoRecordEntity?): OrganoRecordEntity {
         val antes = base?.muestras()
@@ -195,7 +238,12 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                                else antes?.get(i)?.afectaciones?.takeIf { a -> esSinAfectacion(a) } ?: opcionNinguna.value
             )
         }
-        return (base ?: OrganoRecordEntity(fechaRegistro = System.currentTimeMillis(), bloque = "", numeroBin = 0))
+        // Registro nuevo: toma la ubicación GPS actual. Al editar se conserva la del registro original.
+        val gps = ubicacion
+        return (base ?: OrganoRecordEntity(
+            fechaRegistro = System.currentTimeMillis(), bloque = "", numeroBin = 0,
+            latitud = gps?.latitude, longitud = gps?.longitude, precisionGps = gps?.accuracy?.toDouble()
+        ))
             .copy(
                 bloque = bloque,
                 grupo = grupo.trim().uppercase(),
@@ -232,8 +280,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         for (i in 0 until 5) samples[i] = SampleState()
     }
 
+    /** Registro tal como quedaría al guardar (para el diálogo de confirmación). */
+    fun vistaPrevia(): OrganoRecordEntity = formToEntity(null)
+
     /** null si el formulario es válido; si no, el mensaje para el usuario. */
-    private fun validar(): String? {
+    fun validar(): String? {
         val binNum = numeroBin.toIntOrNull()
         if (!availableBlocks.value.contains(bloque)) return "El bloque no existe en el catálogo. Actualiza catálogos desde Inicio"
         if (binNum == null || binNum < 1 || binNum > 200) return "El número de Bin debe ser entre 1 y 200"
@@ -383,25 +434,16 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     var isUploading by mutableStateOf(false)
         private set
 
-    fun uploadRecord(record: OrganoRecordEntity, onResult: (String?) -> Unit) {
+    /** Envía exactamente los registros que la persona revisó y confirmó. */
+    fun uploadRecords(lista: List<OrganoRecordEntity>, onResult: (String) -> Unit) {
         viewModelScope.launch {
-            isUploading = true
-            try { onResult(send(record)) } finally { isUploading = false }
-        }
-    }
-
-    /** Envía todo lo no enviado: pendientes y los que tuvieron error. */
-    fun uploadAllUnsyncedRecords(onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val pending = dao.getAllRecordsOnce().filter { !it.isSynced }
-            if (pending.isEmpty()) {
-                onResult("No hay registros pendientes")
-                return@launch
-            }
             isUploading = true
             try {
-                val errores = pending.count { send(it) != null }
-                onResult("Envío terminado: ${pending.size - errores} exitosos, $errores con error")
+                val errores = lista.mapNotNull { send(it) }
+                onResult(
+                    if (lista.size == 1) errores.firstOrNull() ?: "Registro enviado"
+                    else "Envío terminado: ${lista.size - errores.size} exitosos, ${errores.size} con error"
+                )
             } finally {
                 isUploading = false
             }
@@ -455,6 +497,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
             usuario = "${Build.MANUFACTURER} ${Build.MODEL}",
             fotografia = fotoBase64,
             grupo_forza = record.grupo.ifBlank { null },
+            latitud = record.latitud, longitud = record.longitud, precision_gps = record.precisionGps,
             m1_peso = peso(0), m1_color = m[0].color, m1_brix = m[0].brix, m1_acidez = m[0].acidez, m1_translucidez = m[0].translucidez.toString(), m1_categoria = m[0].categoria, m1_afectaciones = m[0].afectaciones,
             m2_peso = peso(1), m2_color = m[1].color, m2_brix = m[1].brix, m2_acidez = m[1].acidez, m2_translucidez = m[1].translucidez.toString(), m2_categoria = m[1].categoria, m2_afectaciones = m[1].afectaciones,
             m3_peso = peso(2), m3_color = m[2].color, m3_brix = m[2].brix, m3_acidez = m[2].acidez, m3_translucidez = m[2].translucidez.toString(), m3_categoria = m[2].categoria, m3_afectaciones = m[2].afectaciones,

@@ -61,8 +61,17 @@ data class OrganoRecordEntity(
     val m5Afectaciones: String = "Ninguna",
     val isSynced: Boolean = false,
     // Último error de envío ("" = sin error). Pendiente = !isSynced && ultimoError vacío.
-    val ultimoError: String = ""
+    val ultimoError: String = "",
+    // Ubicación GPS al guardar (null = sin permiso o sin señal); precisión en metros
+    val latitud: Double? = null,
+    val longitud: Double? = null,
+    val precisionGps: Double? = null
 )
+
+/** "6.123456, -75.123456 (±8 m)" o "Sin ubicación GPS". */
+fun OrganoRecordEntity.ubicacionTxt(): String =
+    if (latitud == null || longitud == null) "Sin ubicación GPS"
+    else String.format(java.util.Locale.US, "%.6f, %.6f", latitud, longitud) + (precisionGps?.let { " (±${it.toInt()} m)" } ?: "")
 
 @Entity(tableName = "cached_blocks")
 data class CachedBlockEntity(
@@ -203,9 +212,18 @@ val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     }
 }
 
+// v5 -> v6: ubicación GPS del registro (los registros anteriores quedan sin ubicación).
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE organo_records ADD COLUMN latitud REAL")
+        db.execSQL("ALTER TABLE organo_records ADD COLUMN longitud REAL")
+        db.execSQL("ALTER TABLE organo_records ADD COLUMN precisionGps REAL")
+    }
+}
+
 @Database(
     entities = [OrganoRecordEntity::class, CachedBlockEntity::class, CachedAfectacionEntity::class, SyncLogEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -222,7 +240,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "organo_database"
                 )
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

@@ -30,6 +30,10 @@ data class OrganoUploadRequest(
     val fotografia: String? = null,
     // Grupo elegido en la app (GF o grupo siembra). Vacío/null: el servidor lo toma de blocks_desarrollo.
     val grupo_forza: String? = null,
+    // Ubicación GPS del bin (null si el teléfono no la obtuvo)
+    val latitud: Double? = null,
+    val longitud: Double? = null,
+    val precision_gps: Double? = null,
     // Muestras
     val m1_peso: Double?, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: String, val m1_categoria: String, val m1_afectaciones: String,
     val m2_peso: Double?, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: String, val m2_categoria: String, val m2_afectaciones: String,

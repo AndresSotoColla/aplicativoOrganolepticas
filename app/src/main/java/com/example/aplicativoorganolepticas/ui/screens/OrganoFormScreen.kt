@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.example.aplicativoorganolepticas.data.CachedAfectacionEntity
+import com.example.aplicativoorganolepticas.data.ubicacionTxt
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
 import com.example.aplicativoorganolepticas.ui.viewmodel.OrganoViewModel
@@ -119,6 +121,19 @@ fun OrganoFormScreen(
         if (granted) cameraLauncher.launch(viewModel.prepareCameraForGlobal())
         else Toast.makeText(context, "Se necesita permiso de cámara para tomar fotos", Toast.LENGTH_SHORT).show()
     }
+    // GPS: solo en registro nuevo (al editar se conserva la ubicación original)
+    var permisoGps by remember { mutableStateOf(viewModel.tienePermisoGps()) }
+    val gpsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        permisoGps = viewModel.tienePermisoGps()
+    }
+    if (!editando) {
+        DisposableEffect(permisoGps) {
+            viewModel.iniciarGps()
+            onDispose { viewModel.detenerGps() }
+        }
+    }
+    var previa by remember { mutableStateOf<com.example.aplicativoorganolepticas.data.OrganoRecordEntity?>(null) }
+
     fun launchCamera() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             cameraLauncher.launch(viewModel.prepareCameraForGlobal())
@@ -169,9 +184,9 @@ fun OrganoFormScreen(
                     } else {
                         Button(
                             onClick = {
-                                viewModel.saveRecord { errorMsg ->
-                                    scope.launch { snackbarHostState.showSnackbar(errorMsg ?: "Registro guardado correctamente") }
-                                }
+                                val err = viewModel.validar()
+                                if (err != null) scope.launch { snackbarHostState.showSnackbar(err) }
+                                else previa = viewModel.vistaPrevia()
                             },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = MaterialTheme.shapes.medium,
@@ -247,6 +262,13 @@ fun OrganoFormScreen(
                     )
                 }
                 if (isBlockValid) GrupoSelector(viewModel)
+                if (!editando) {
+                    EstadoGps(viewModel, permisoGps) {
+                        gpsLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                    }
+                } else {
+                    viewModel.editOriginal?.let { Text("Ubicación: ${it.ubicacionTxt()} (no cambia al editar)", fontSize = 12.sp, color = Color.Black.copy(alpha = 0.6f)) }
+                }
             }
 
             // ── 5 MUESTRAS ──
@@ -327,6 +349,23 @@ fun OrganoFormScreen(
         )
     }
 
+    previa?.let { r ->
+        ConfirmarRegistros(
+            titulo = "¿Guardar este registro?",
+            intro = "Revisa los datos que quedan guardados en el equipo (se cargan al servidor cuando los envíes):",
+            registros = listOf(r),
+            textoConfirmar = "GUARDAR",
+            textoCancelar = "REVISAR",
+            onConfirm = {
+                previa = null
+                viewModel.saveRecord { errorMsg ->
+                    scope.launch { snackbarHostState.showSnackbar(errorMsg ?: "Registro guardado correctamente") }
+                }
+            },
+            onDismiss = { previa = null }
+        )
+    }
+
     if (confirmarCancelar) {
         AlertDialog(
             onDismissRequest = { confirmarCancelar = false },
@@ -342,6 +381,24 @@ fun OrganoFormScreen(
             dismissButton = { TextButton(onClick = { confirmarCancelar = false }) { Text("SEGUIR EDITANDO", color = Color.Black) } },
             containerColor = LightBeige
         )
+    }
+}
+
+/** Estado del GPS para el registro nuevo: precisión, buscando, ubicación apagada o sin permiso (con botón para darlo). */
+@Composable
+private fun EstadoGps(viewModel: OrganoViewModel, permiso: Boolean, pedirPermiso: () -> Unit) {
+    val u = viewModel.ubicacion
+    val (texto, color) = when {
+        !permiso -> "Sin permiso de ubicación: el registro se guarda sin GPS" to Rojo
+        u != null -> "Ubicación GPS lista (±${u.accuracy.toInt()} m)" to Verde
+        !viewModel.ubicacionActivada() -> "La ubicación del teléfono está apagada: actívala para guardar con GPS" to Rojo
+        else -> "Buscando ubicación GPS… (si no la encuentra, se guarda sin GPS)" to Color(0xFF8A4B00)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.LocationOn, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(texto, fontSize = 13.sp, color = color, modifier = Modifier.weight(1f))
+        if (!permiso) TextButton(onClick = pedirPermiso) { Text("Dar permiso", color = Color.Black, fontWeight = FontWeight.Bold) }
     }
 }
 

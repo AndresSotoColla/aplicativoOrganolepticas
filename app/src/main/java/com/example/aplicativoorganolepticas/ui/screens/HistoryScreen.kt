@@ -69,6 +69,7 @@ fun HistoryScreen(
     var pickerDe by remember { mutableStateOf<String?>(null) }      // "desde" / "hasta"
     var expandidos by remember { mutableStateOf(setOf<Int>()) }
     var aEliminar by remember { mutableStateOf<OrganoRecordEntity?>(null) }
+    var aEnviar by remember { mutableStateOf<List<OrganoRecordEntity>?>(null) }
     var pasoCache by remember { mutableIntStateOf(0) }              // 0 nada, 1 hay pendientes, 2 y 3 confirmaciones
 
     val filtrosActivos = listOf(desde, hasta, estado).count { it != null }
@@ -182,7 +183,7 @@ fun HistoryScreen(
                             expandido = r.id in expandidos,
                             onToggle = { expandidos = if (r.id in expandidos) expandidos - r.id else expandidos + r.id },
                             onEdit = { onEdit(r) },
-                            onUpload = { viewModel.uploadRecord(r) { err -> avisar(err ?: "Registro enviado") } },
+                            onUpload = { aEnviar = listOf(r) },
                             onDelete = { aEliminar = r },
                             subiendo = viewModel.isUploading
                         )
@@ -235,6 +236,11 @@ fun HistoryScreen(
         )
     }
 
+    // ── Enviar (con el detalle de lo que se carga) ──
+    aEnviar?.let { lista ->
+        ConfirmarEnvio(lista, onConfirm = { aEnviar = null; viewModel.uploadRecords(lista) { avisar(it) } }, onDismiss = { aEnviar = null })
+    }
+
     // ── Borrar caché ──
     when (pasoCache) {
         1 -> {
@@ -250,7 +256,7 @@ fun HistoryScreen(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { pasoCache = 0; viewModel.uploadAllUnsyncedRecords { avisar(it) } }, enabled = !viewModel.isUploading) {
+                    TextButton(onClick = { pasoCache = 0; aEnviar = records.filter { !it.isSynced } }, enabled = !viewModel.isUploading) {
                         Text("ENVIAR AHORA", fontWeight = FontWeight.Bold, color = Color.Black)
                     }
                 },
@@ -467,6 +473,7 @@ private fun RegistroCard(
                         }
                         Column(Modifier.weight(1f)) {
                             Text("Grupo: ${record.grupo.ifEmpty { "—" }}", fontSize = 13.sp, color = Color.Black)
+                            Text("Ubicación: ${record.ubicacionTxt()}", fontSize = 13.sp, color = Color.Black)
                             Text("Observaciones: ${record.observaciones.ifBlank { "—" }}", fontSize = 13.sp, color = Color.Black)
                         }
                     }

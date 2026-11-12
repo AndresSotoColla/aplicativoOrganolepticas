@@ -3,6 +3,7 @@ package com.example.aplicativoorganolepticas
 import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
 import com.example.aplicativoorganolepticas.data.muestrasConPeso
 import com.example.aplicativoorganolepticas.data.resumir
+import com.example.aplicativoorganolepticas.data.ubicacionTxt
 import com.example.aplicativoorganolepticas.ui.viewmodel.cambiosEntre
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -39,5 +40,11 @@ class OrganoLogicaTest {
         val r2 = resumir(listOf(base.copy(m1Afectaciones = "Sin defecto")))
         assertEquals(2, r2.muestrasSinAfectacion)
         assertEquals(emptyList<Pair<String, Int>>(), r2.afectaciones)
+    }
+
+    @Test
+    fun ubicacion_legible_o_sin_gps() {
+        assertEquals("Sin ubicación GPS", base.ubicacionTxt())
+        assertEquals("6.123457, -75.500000 (±8 m)", base.copy(latitud = 6.1234567, longitud = -75.5, precisionGps = 8.4).ubicacionTxt())
     }
 }

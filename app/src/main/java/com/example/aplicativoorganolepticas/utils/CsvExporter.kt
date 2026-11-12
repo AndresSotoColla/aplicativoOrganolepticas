@@ -36,7 +36,7 @@ object CsvExporter {
 
         val header = "fecha_registro,bloque,grupo,numero_bin,observaciones," +
                 (1..5).joinToString(",") { "m${it}_peso,m${it}_color,m${it}_brix,m${it}_prueba_acidez,m${it}_acidez,m${it}_translucidez,m${it}_categoria,m${it}_afectaciones" } +
-                ",usuario,estado,ultimo_error\n"
+                ",usuario,estado,ultimo_error,latitud,longitud,precision_gps_m\n"
 
         val sb = StringBuilder()
         records.forEach { r ->
@@ -44,7 +44,7 @@ object CsvExporter {
             r.muestras().forEach { m ->
                 sb.append("${m.peso},${m.color},${m.brix},${if (m.pruebaAcidez) "Sí" else "No"},${m.acidez},${m.translucidez},${m.categoria},${q(m.afectaciones)},")
             }
-            sb.append("$deviceUser,${estadoDe(r)},${q(r.ultimoError)}\n")
+            sb.append("$deviceUser,${estadoDe(r)},${q(r.ultimoError)},${r.latitud ?: ""},${r.longitud ?: ""},${r.precisionGps ?: ""}\n")
         }
         guardarEnDescargas(context, "Organolepticas_${etiqueta}_${System.currentTimeMillis()}.csv", "text/csv",
             "﻿" + header + sb)

@@ -1,9 +1,13 @@
 package com.example.aplicativoorganolepticas
 
+import android.Manifest
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -30,6 +34,14 @@ class MainActivity : ComponentActivity() {
             AplicativoOrganolepticasTheme {
                 val navController = rememberNavController()
                 val viewModel: OrganoViewModel = viewModel(factory = OrganoViewModel.Factory)
+
+                // Al abrir la app (primera vez tras instalar, y mientras no lo haya dado) se pide permiso de ubicación.
+                val gpsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
+                LaunchedEffect(Unit) {
+                    if (!viewModel.tienePermisoGps()) {
+                        gpsLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                    }
+                }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavHost(

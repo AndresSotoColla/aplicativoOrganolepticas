@@ -41,6 +41,7 @@ fun DataScreen(viewModel: OrganoViewModel, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var confirmClearLogs by remember { mutableStateOf(false) }
+    var aEnviar by remember { mutableStateOf<List<com.example.aplicativoorganolepticas.data.OrganoRecordEntity>?>(null) }
     val sdf = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
 
     val enviados = records.count { estadoDe(it) == "Enviado" }
@@ -93,7 +94,7 @@ fun DataScreen(viewModel: OrganoViewModel, onBack: () -> Unit) {
                         LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color.Black)
                     }
                     Button(
-                        onClick = { viewModel.uploadAllUnsyncedRecords { avisar(it) } },
+                        onClick = { aEnviar = records.filter { !it.isSynced } },
                         enabled = porEnviar > 0 && !viewModel.isUploading,
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
                         modifier = Modifier.fillMaxWidth().height(52.dp)
@@ -135,7 +136,7 @@ fun DataScreen(viewModel: OrganoViewModel, onBack: () -> Unit) {
                                 Text(r.ultimoError, fontSize = 12.sp, color = Rojo)
                             }
                             TextButton(
-                                onClick = { viewModel.uploadRecord(r) { err -> avisar(err ?: "Registro enviado") } },
+                                onClick = { aEnviar = listOf(r) },
                                 enabled = !viewModel.isUploading
                             ) { Text("Reintentar", color = Color.Black) }
                         }
@@ -175,6 +176,10 @@ fun DataScreen(viewModel: OrganoViewModel, onBack: () -> Unit) {
                 }
                 HorizontalDivider(color = Color.Black.copy(alpha = 0.08f))
             }
+        }
+
+        aEnviar?.let { lista ->
+            ConfirmarEnvio(lista, onConfirm = { aEnviar = null; viewModel.uploadRecords(lista) { avisar(it) } }, onDismiss = { aEnviar = null })
         }
 
         if (confirmClearLogs) {
