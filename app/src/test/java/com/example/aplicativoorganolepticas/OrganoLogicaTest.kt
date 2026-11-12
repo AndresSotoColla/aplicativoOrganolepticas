@@ -34,5 +34,10 @@ class OrganoLogicaTest {
         assertEquals(0.64, r.acidezPct!!.promedio, 1e-9)   // 5 ml * 0.1 * 0.064 / 5 * 100
         assertEquals(listOf("Cuello" to 2, "Off Color" to 2), r.afectaciones)
         assertEquals(2, r.muestrasSinAfectacion)
+
+        // "Sin defecto" (vigente) y "Ninguna" (viejo) cuentan igual como sin afectación
+        val r2 = resumir(listOf(base.copy(m1Afectaciones = "Sin defecto")))
+        assertEquals(2, r2.muestrasSinAfectacion)
+        assertEquals(emptyList<Pair<String, Int>>(), r2.afectaciones)
     }
 }

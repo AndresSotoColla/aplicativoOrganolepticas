@@ -1,5 +1,9 @@
 package com.example.aplicativoorganolepticas.data
 
+/** Valores que significan "sin afectación": el vigente del catálogo ("Sin defecto") y el viejo de la app ("Ninguna"). */
+fun esSinAfectacion(nombre: String): Boolean =
+    nombre.trim().lowercase() in setOf("", "ninguna", "ninguno", "sin defecto")
+
 /** Estadística (promedio, mínimo, máximo) de una variable; null si no hay datos. */
 data class Estadistica(val n: Int, val promedio: Double, val min: Double, val max: Double)
 
@@ -20,7 +24,7 @@ data class Resumen(
     val gastoNaOH: Estadistica?,      // ml, solo muestras con prueba de acidez
     val acidezPct: Estadistica?,      // % = ml * 0.1 * 0.064 / 5 * 100 (misma fórmula del servidor)
     val categorias: List<Pair<String, Int>>,
-    val afectaciones: List<Pair<String, Int>>,   // por muestra, sin "Ninguna", de mayor a menor
+    val afectaciones: List<Pair<String, Int>>,   // por muestra, sin "Sin defecto"/"Ninguna", de mayor a menor
     val muestrasSinAfectacion: Int,
     val enviados: Int,
     val pendientes: Int,
@@ -34,7 +38,7 @@ data class Resumen(
 fun resumir(registros: List<OrganoRecordEntity>): Resumen {
     val ms = registros.flatMap { it.muestrasConPeso() }
     val conAcidez = ms.filter { it.pruebaAcidez && it.acidez > 0.0 }
-    val afect = ms.flatMap { m -> m.afectaciones.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("Ninguna", true) } }
+    val afect = ms.flatMap { m -> m.afectaciones.split(",").map { it.trim() }.filter { !esSinAfectacion(it) } }
     return Resumen(
         bines = registros.size,
         bloques = registros.map { it.bloque }.distinct().size,
@@ -48,7 +52,7 @@ fun resumir(registros: List<OrganoRecordEntity>): Resumen {
         acidezPct = conAcidez.map { it.acidez * 0.1 * 0.064 / 5 * 100 }.estadistica(),
         categorias = ms.groupingBy { it.categoria }.eachCount().toList().sortedByDescending { it.second },
         afectaciones = afect.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
-        muestrasSinAfectacion = ms.count { m -> m.afectaciones.split(",").all { it.trim().isEmpty() || it.trim().equals("Ninguna", true) } },
+        muestrasSinAfectacion = ms.count { m -> m.afectaciones.split(",").all { esSinAfectacion(it) } },
         enviados = registros.count { it.isSynced },
         pendientes = registros.count { !it.isSynced && it.ultimoError.isEmpty() },
         conError = registros.count { !it.isSynced && it.ultimoError.isNotEmpty() },

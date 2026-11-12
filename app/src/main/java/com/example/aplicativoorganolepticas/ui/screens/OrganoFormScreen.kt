@@ -37,7 +37,6 @@ import coil.compose.AsyncImage
 import com.example.aplicativoorganolepticas.data.CachedAfectacionEntity
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
-import com.example.aplicativoorganolepticas.ui.viewmodel.NINGUNA
 import com.example.aplicativoorganolepticas.ui.viewmodel.OrganoViewModel
 import com.example.aplicativoorganolepticas.ui.viewmodel.SampleState
 import kotlinx.coroutines.launch
@@ -101,6 +100,7 @@ fun OrganoFormScreen(
     var confirmarCancelar by remember { mutableStateOf(false) }
     val availableBlocks by viewModel.availableBlocks.collectAsState()
     val catalogo by viewModel.afectacionesCatalogo.collectAsState()
+    val ninguna by viewModel.opcionNinguna.collectAsState()
     val grupos = remember(catalogo) { agrupar(catalogo) }
     // ponytail: máx. 50 sugerencias en el menú; el usuario escribe para filtrar
     val filteredBlocks = remember(viewModel.bloque, availableBlocks) {
@@ -255,6 +255,7 @@ fun OrganoFormScreen(
                     index = i,
                     sampleState = viewModel.samples[i],
                     grupos = grupos,
+                    ninguna = ninguna,
                     onPesoChange = { viewModel.updateSamplePeso(i, it) },
                     onColorChange = { viewModel.updateSampleColor(i, it) },
                     onBrixChange = { viewModel.updateSampleBrix(i, it) },
@@ -460,6 +461,7 @@ fun SampleCard(
     index: Int,
     sampleState: SampleState,
     grupos: List<Pair<String, List<String>>>,
+    ninguna: String,
     onPesoChange: (String) -> Unit,
     onColorChange: (String) -> Unit,
     onBrixChange: (String) -> Unit,
@@ -567,14 +569,14 @@ fun SampleCard(
             )
         }
 
-        // Afectaciones: "Ninguna" primero, luego externas e internas con colores distintos
+        // Afectaciones: "sin afectación" (Sin defecto) primero, luego externas e internas con colores distintos
         ExposedDropdownMenuBox(
             expanded = afectacionMenuExpanded,
             onExpandedChange = { afectacionMenuExpanded = it },
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = sampleState.afectaciones.ifEmpty { listOf(NINGUNA) }.joinToString(", "),
+                value = sampleState.afectaciones.ifEmpty { listOf(ninguna) }.joinToString(", "),
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Afectaciones") },
@@ -589,8 +591,8 @@ fun SampleCard(
                 onDismissRequest = { afectacionMenuExpanded = false },
                 modifier = Modifier.background(Color.White)
             ) {
-                OpcionAfectacion(NINGUNA, sampleState.afectaciones.contains(NINGUNA), Color.White, Color.Black) {
-                    onAfectacionToggle(NINGUNA)
+                OpcionAfectacion(ninguna, sampleState.afectaciones.isEmpty(), Color.White, Color.Black) {
+                    onAfectacionToggle(ninguna)
                 }
                 grupos.forEach { (titulo, nombres) ->
                     val (fondo, texto) = coloresGrupo(titulo)

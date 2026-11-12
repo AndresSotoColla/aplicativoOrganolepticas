@@ -38,12 +38,12 @@ data class SampleState(
     val acidez: String = "",
     val avanceTranslucidez: Int = 10,
     val categoria: String = "Especial",
-    val afectaciones: List<String> = listOf(NINGUNA)
+    val afectaciones: List<String> = emptyList()   // vacía = sin afectación
 ) {
     val tienePeso get() = (pesoFruta.toDoubleOrNull() ?: 0.0) > 0.0
 }
 
-const val NINGUNA = "Ninguna"
+private fun esTipoNinguno(a: CachedAfectacionEntity) = a.tipo.contains("ningun", ignoreCase = true) || esSinAfectacion(a.nombre)
 
 /** Estado de envío de un registro: "Enviado", "Error" o "Pendiente". */
 fun estadoDe(r: OrganoRecordEntity): String = when {
@@ -124,10 +124,15 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     val availableBlocks: StateFlow<List<String>> = blocksInfo.map { l -> l.map { it.bloque } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Catálogo de afectaciones (sin "Ninguna", que la app pone siempre de primera). */
+    /** Catálogo de afectaciones externas/internas (sin la opción "sin afectación", que va aparte y de primera). */
     val afectacionesCatalogo: StateFlow<List<CachedAfectacionEntity>> = dao.getCachedAfectaciones()
-        .map { l -> l.filter { !it.nombre.equals(NINGUNA, ignoreCase = true) } }
+        .map { l -> l.filterNot { esTipoNinguno(it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Nombre de la opción "sin afectación": la de tipo Ninguno del catálogo ("Sin defecto"). */
+    val opcionNinguna: StateFlow<String> = dao.getCachedAfectaciones()
+        .map { l -> l.firstOrNull { it.tipo.contains("ningun", ignoreCase = true) }?.nombre ?: "Sin defecto" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Sin defecto")
 
     val logs: StateFlow<List<SyncLogEntity>> = dao.getLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -151,16 +156,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     fun updateSampleTranslucidez(index: Int, value: Int) { samples[index] = samples[index].copy(avanceTranslucidez = value) }
     fun updateSampleCategoria(index: Int, value: String) { samples[index] = samples[index].copy(categoria = value) }
 
-    /** "Ninguna" excluye a las demás: marcarla limpia la lista; marcar otra afectación desmarca "Ninguna". */
+    /** "Sin afectación" excluye a las demás: marcarla limpia la lista; marcar una afectación la desmarca. */
     fun updateSampleAfectacionToggle(index: Int, item: String) {
-        val current = samples[index].afectaciones.toMutableList()
-        if (item == NINGUNA) {
-            current.clear(); current.add(NINGUNA)
-        } else {
-            current.remove(NINGUNA)
-            if (!current.remove(item)) current.add(item)
-            if (current.isEmpty()) current.add(NINGUNA)
-        }
+        val current = samples[index].afectaciones.filterNot { esSinAfectacion(it) }.toMutableList()
+        if (esSinAfectacion(item) || item == opcionNinguna.value) current.clear()
+        else if (!current.remove(item)) current.add(item)
         samples[index] = samples[index].copy(afectaciones = current)
     }
 
@@ -180,7 +180,8 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
     // ─── Formulario <-> registro ───────────────────────────────────────────
     private fun formToEntity(base: OrganoRecordEntity?): OrganoRecordEntity {
-        val ms = samples.map {
+        val antes = base?.muestras()
+        val ms = samples.mapIndexed { i, it ->
             Muestra(
                 peso = it.pesoFruta.toDoubleOrNull() ?: 0.0,
                 color = it.colorExterno,
@@ -189,7 +190,9 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 acidez = it.acidez.toDoubleOrNull() ?: 0.0,
                 translucidez = it.avanceTranslucidez,
                 categoria = it.categoria,
-                afectaciones = it.afectaciones.joinToString(", ")
+                // Sin afectación: se guarda el nombre vigente; al editar se conserva el que ya tenía ("Ninguna" en datos viejos)
+                afectaciones = if (it.afectaciones.isNotEmpty()) it.afectaciones.joinToString(", ")
+                               else antes?.get(i)?.afectaciones?.takeIf { a -> esSinAfectacion(a) } ?: opcionNinguna.value
             )
         }
         return (base ?: OrganoRecordEntity(fechaRegistro = System.currentTimeMillis(), bloque = "", numeroBin = 0))
@@ -219,7 +222,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 acidez = txt(m.acidez),
                 avanceTranslucidez = m.translucidez,
                 categoria = m.categoria,
-                afectaciones = m.afectaciones.split(",").map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(NINGUNA) }
+                afectaciones = m.afectaciones.split(",").map { it.trim() }.filterNot { esSinAfectacion(it) }
             )
         }
     }
@@ -361,7 +364,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                     dao.clearCachedAfectaciones()
                     dao.insertAfectaciones(afects)
                 }
-                val nAfect = afects.count { !it.nombre.equals(NINGUNA, ignoreCase = true) }
+                val nAfect = afects.count { !esTipoNinguno(it) }
                 onResult("Catálogos actualizados: ${bloques.size} bloques, $nAfect afectaciones")
             } catch (e: retrofit2.HttpException) {
                 onResult(
