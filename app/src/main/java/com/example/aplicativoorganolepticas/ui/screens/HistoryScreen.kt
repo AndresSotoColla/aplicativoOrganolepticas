@@ -225,6 +225,14 @@ fun OrganoRecordItem(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Sincronizado", color = Color(0xFF4CAF50), fontSize = 12.sp)
                 } else {
+                    if (record.ultimoError.isNotEmpty()) {
+                        Text(
+                            "Error al enviar",
+                            color = Color(0xFFC62828),
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     TextButton(
                         onClick = onUpload,
                         enabled = !isUploading,

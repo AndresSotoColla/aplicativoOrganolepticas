@@ -13,3 +13,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# APK con Ctrl+Shift+B (skill apk-ctrl-shift-b)
+apk/
+keystore.properties
+*.jks
+*.keystore
+tasks.json.bak

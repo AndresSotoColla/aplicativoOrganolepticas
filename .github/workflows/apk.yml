@@ -1,0 +1,95 @@
+# APK con Ctrl+Shift+B (skill apk-ctrl-shift-b) - proyecto android en ".".
+# tools/apk/apk.ps1 lo lanza con:  gh workflow run apk.yml -f tipo=debug|release  y descarga el
+# artefacto "apk". A mano: GitHub > Actions > "APK" > Run workflow.
+# Compila lo que esta EN GITHUB (rama elegida), no lo que tienes sin commit en el PC.
+# Secrets (repo > Settings > Secrets and variables > Actions):
+#   ENV_ARCHIVO               (solo si el build necesita un .env) = contenido completo de ese archivo
+#   ANDROID_KEYSTORE_BASE64   (release) = el .jks en base64
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD (release)
+name: APK
+on:
+  workflow_dispatch:
+    inputs:
+      tipo:
+        description: 'debug = APK de prueba; release = firmado con tu llave'
+        type: choice
+        options: [debug, release]
+        default: debug
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ENV_ARCHIVO_NOMBRE: ''
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v5
+      - name: Variables del build (secret ENV_ARCHIVO)
+        if: env.ENV_ARCHIVO_NOMBRE != ''
+        env:
+          CONTENIDO: ${{ secrets.ENV_ARCHIVO }}
+        run: |
+          if [ -z "$CONTENIDO" ]; then echo "::error::Falta el secret ENV_ARCHIVO (contenido de $ENV_ARCHIVO_NOMBRE)"; exit 1; fi
+          printf '%s\n' "$CONTENIDO" > "$ENV_ARCHIVO_NOMBRE"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      # Cache de Gradle entre ejecuciones (no baja Gradle ni dependencias cada vez)
+      - uses: gradle/actions/setup-gradle@v4
+      # El runner ya trae el Android SDK (ANDROID_HOME); solo se aceptan licencias
+      - name: Android SDK (licencias)
+        run: |
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+      - name: Compilar APK (.)
+        env:
+          # Clave X-API-Key de catálogos (app/build.gradle.kts la mete en BuildConfig). Secret ORGANO_API_KEY.
+          ORGANO_API_KEY: ${{ secrets.ORGANO_API_KEY }}
+        run: |
+          if [ -z "$ORGANO_API_KEY" ]; then echo "::warning::Falta el secret ORGANO_API_KEY: la app no podrá actualizar catálogos"; fi
+          cd .
+          chmod +x gradlew
+          # Distribucion "bin" de Gradle (la mitad de pesada que "all")
+          sed -i 's/-all\.zip/-bin.zip/' gradle/wrapper/gradle-wrapper.properties || true
+          # El zip de Gradle se baja de GitHub y a veces responde 502/504: hasta 3 intentos
+          for i in 1 2 3; do ./gradlew --version --no-daemon && break; echo "::warning::No se pudo bajar Gradle (intento $i)"; sleep $((i * 30)); done
+          if [ "${{ inputs.tipo }}" = "release" ]; then TAREA=assembleRelease; else TAREA=assembleDebug; fi
+          ./gradlew $TAREA --no-daemon
+          mkdir -p "$GITHUB_WORKSPACE/salida"
+          cp app/build/outputs/apk/${{ inputs.tipo }}/*.apk "$GITHUB_WORKSPACE/salida/"
+      # Firma del release con tu llave (secrets). El debug sale firmado con la llave de prueba de Android.
+      - name: Firmar (release)
+        if: inputs.tipo == 'release'
+        working-directory: .
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KS_ALIAS" ]; then
+            echo "::error::Faltan los secrets de firma: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS (y ANDROID_KEY_PASSWORD si es distinta)"
+            exit 1
+          fi
+          export KEY_PASS="${KEY_PASS:-$KS_PASS}"
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/firma.jks"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls salida/*.apk | head -1)
+          "$BT/zipalign" -p -f 4 "$APK" "$RUNNER_TEMP/alineado.apk"
+          rm -f salida/*.apk
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/firma.jks" --ks-key-alias "$KS_ALIAS" \
+            --ks-pass env:KS_PASS --key-pass env:KEY_PASS --out salida/app-release.apk "$RUNNER_TEMP/alineado.apk"
+          "$BT/apksigner" verify salida/app-release.apk
+          rm -f "$RUNNER_TEMP/firma.jks" "$RUNNER_TEMP/alineado.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: salida/*.apk
+          retention-days: 7
+          if-no-files-found: error

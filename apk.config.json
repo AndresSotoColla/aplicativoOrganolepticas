@@ -1,0 +1,17 @@
+{
+  "tipo": "android",
+  "carpeta": ".",
+  "nombre": "aplicativoOrganolepticas",
+  "appId": "com.example.aplicativoorganolepticas",
+  "rama": "master",
+  "workflow": "apk.yml",
+  "artefacto": "apk",
+  "javaMin": 17,
+  "javaMax": 21,
+  "javaCI": 17,
+  "buildWeb": "",
+  "envArchivo": "",
+  "antesDeGradle": [],
+  "modulo": "app",
+  "sincronizarVersion": false
+}

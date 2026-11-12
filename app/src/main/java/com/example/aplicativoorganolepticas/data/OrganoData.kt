@@ -57,12 +57,30 @@ data class OrganoRecordEntity(
     val m5AvanceTranslucidez: Int = 10,
     val m5Categoria: String = "Especial",
     val m5Afectaciones: String = "Ninguna",
-    val isSynced: Boolean = false
+    val isSynced: Boolean = false,
+    // Último error de envío ("" = sin error). Pendiente = !isSynced && ultimoError vacío.
+    val ultimoError: String = ""
 )
 
 @Entity(tableName = "cached_blocks")
 data class CachedBlockEntity(
     @PrimaryKey val bloque: String
+)
+
+@Entity(tableName = "cached_afectaciones")
+data class CachedAfectacionEntity(
+    @PrimaryKey val nombre: String
+)
+
+@Entity(tableName = "sync_logs")
+data class SyncLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val fecha: Long,
+    val recordId: Int,
+    val bloque: String,
+    val numeroBin: Int,
+    val exito: Boolean,
+    val mensaje: String
 )
 
 @Dao
@@ -76,8 +94,8 @@ interface OrganoDao {
     @Delete
     suspend fun deleteRecord(record: OrganoRecordEntity): Int
 
-    @Query("UPDATE organo_records SET isSynced = :synced WHERE id = :recordId")
-    suspend fun updateSyncStatus(recordId: Int, synced: Boolean)
+    @Query("UPDATE organo_records SET isSynced = :synced, ultimoError = :error WHERE id = :recordId")
+    suspend fun updateSyncStatus(recordId: Int, synced: Boolean, error: String)
 
     @Query("DELETE FROM organo_records")
     suspend fun deleteAll()
@@ -91,9 +109,46 @@ interface OrganoDao {
 
     @Query("DELETE FROM cached_blocks")
     suspend fun clearCachedBlocks()
+
+    // Cache afectaciones (solo las activas en el servidor)
+    @Query("SELECT nombre FROM cached_afectaciones ORDER BY nombre")
+    fun getCachedAfectaciones(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAfectaciones(items: List<CachedAfectacionEntity>)
+
+    @Query("DELETE FROM cached_afectaciones")
+    suspend fun clearCachedAfectaciones()
+
+    // Logs de envío
+    @Insert
+    suspend fun insertLog(log: SyncLogEntity)
+
+    // ponytail: tope fijo de 300 en pantalla, paginar si hace falta ver más
+    @Query("SELECT * FROM sync_logs ORDER BY fecha DESC LIMIT 300")
+    fun getLogs(): Flow<List<SyncLogEntity>>
+
+    @Query("DELETE FROM sync_logs")
+    suspend fun clearLogs()
 }
 
-@Database(entities = [OrganoRecordEntity::class, CachedBlockEntity::class], version = 3, exportSchema = false)
+// v3 -> v4: catálogo de afectaciones, logs de envío y último error por registro, SIN borrar registros capturados.
+val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE organo_records ADD COLUMN ultimoError TEXT NOT NULL DEFAULT ''")
+        db.execSQL("CREATE TABLE IF NOT EXISTS cached_afectaciones (nombre TEXT NOT NULL, PRIMARY KEY(nombre))")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_logs (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, fecha INTEGER NOT NULL, " +
+                "recordId INTEGER NOT NULL, bloque TEXT NOT NULL, numeroBin INTEGER NOT NULL, exito INTEGER NOT NULL, mensaje TEXT NOT NULL)"
+        )
+    }
+}
+
+@Database(
+    entities = [OrganoRecordEntity::class, CachedBlockEntity::class, CachedAfectacionEntity::class, SyncLogEntity::class],
+    version = 4,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun organoDao(): OrganoDao
 
@@ -108,6 +163,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "organo_database"
                 )
+                    .addMigrations(MIGRATION_3_4)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

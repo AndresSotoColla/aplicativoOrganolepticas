@@ -10,11 +10,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewModelScope
 import com.example.aplicativoorganolepticas.data.AppDatabase
+import com.example.aplicativoorganolepticas.data.CachedAfectacionEntity
 import com.example.aplicativoorganolepticas.data.CachedBlockEntity
+import com.example.aplicativoorganolepticas.data.SyncLogEntity
 import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
 import com.example.aplicativoorganolepticas.data.network.NetworkModule
 import com.example.aplicativoorganolepticas.utils.CsvExporter
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -26,7 +30,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
-import org.apache.poi.ss.usermodel.WorkbookFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,9 +45,17 @@ data class SampleState(
     val afectaciones: List<String> = listOf("Ninguna")
 )
 
+/** Estado de envío de un registro: "Enviado", "Error" o "Pendiente". */
+fun estadoDe(r: OrganoRecordEntity): String = when {
+    r.isSynced -> "Enviado"
+    r.ultimoError.isNotEmpty() -> "Error"
+    else -> "Pendiente"
+}
+
 class OrganoViewModel(private val context: Context) : ViewModel() {
 
-    private val dao = AppDatabase.getDatabase(context).organoDao()
+    private val database = AppDatabase.getDatabase(context)
+    private val dao = database.organoDao()
 
     companion object {
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
@@ -63,45 +74,10 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     var globalFotoPath by mutableStateOf("")
     var globalFotoUri by mutableStateOf<Uri?>(null)
 
-    val mejoradorOptions = listOf("Dron", "Spray Boom")
-    val afectacionOptions = listOf(
-        "Base Café Tolerable",
-        "Base Café No Tolerable",
-        "Cicatriz",
-        "Cochinilla Externa",
-        "Cónica",
-        "Corchosis",
-        "Corona Grande",
-        "Corona Maltratada",
-        "Corona Pequeña",
-        "Corona Quemada",
-        "Corona Torcida Tolerable",
-        "Corona Torcida No Tolerable",
-        "Coronas Múltiples",
-        "Cuello Tolerable",
-        "Cuello No Tolerable",
-        "Daño Animales",
-        "Daño Insectos",
-        "Daño Mecánico",
-        "Deforme",
-        "Fruta con Golpe",
-        "Gomosis",
-        "Pedúnculo Viejo",
-        "Pedúnculo Humedo Acuoso",
-        "Quema de Sol Tolerable",
-        "Quema de Sol No Tolerable",
-        "Sobremadura",
-        "Off-Color Tolerable",
-        "Off-Color No Tolerable",
-        "Cochinilla Interna",
-        "Enfermedad",
-        "Golpe de Agua Leve",
-        "Golpe de Agua Severo",
-        "Gomosis Interna",
-        "Levadura",
-        "Sin Defecto",
-        "Fruta Sucia"
-    )
+    // "Ninguna" es local (el servidor la ignora); el resto viene del catálogo de afectaciones activas.
+    val afectacionOptions: StateFlow<List<String>> = dao.getCachedAfectaciones()
+        .map { listOf("Ninguna") + it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("Ninguna"))
 
     // ─── Form State: 5 Samples ─────────────────────────────────────────────
     var samples = mutableStateListOf(
@@ -123,9 +99,8 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     val availableBlocks: StateFlow<List<String>> = dao.getCachedBlocks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    init {
-        // syncBlocks() ya no se llama automáticamente para priorizar Excel
-    }
+    val logs: StateFlow<List<SyncLogEntity>> = dao.getLogs()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ─── Sample Updates ────────────────────────────────────────────────────
     fun updateSamplePeso(index: Int, value: String) {
@@ -192,79 +167,40 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
     // Multi-select helpers are now handled per-sample in updateSampleAfectacionToggle
 
-    // ─── Network ───────────────────────────────────────────────────────────
-    fun syncBlocks() {
-        viewModelScope.launch {
-            try {
-                val remoteCronograma = NetworkModule.apiService.getCronograma()
-                if (remoteCronograma.isNotEmpty()) {
-                    val entities = remoteCronograma.map { CachedBlockEntity(it.bloque) }
-                    dao.clearCachedBlocks()
-                    dao.insertBlocks(entities)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
+    // ─── Catálogos (bloques y afectaciones activos desde el servidor) ─────
+    var isUpdatingCatalogs by mutableStateOf(false)
+        private set
 
-    // ─── Cargar Bloques de Excel ───────────────────────────────────────────
-    fun loadBlocksFromExcel(uri: Uri, context: Context, onResult: (String) -> Unit) {
+    fun actualizarCatalogos(onResult: (String) -> Unit) {
+        if (NetworkModule.API_KEY.isBlank()) {
+            onResult("Falta la clave API (ORGANO_API_KEY) en la compilación de la app")
+            return
+        }
         viewModelScope.launch {
+            isUpdatingCatalogs = true
             try {
-                val blocks = withContext(Dispatchers.IO) {
-                    val extractedBlocks = mutableListOf<String>()
-                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                        val workbook = WorkbookFactory.create(inputStream)
-                        val sheet = workbook.getSheetAt(0)
-                        
-                        // Buscar índice de columna "Bloque"
-                        var blockColumnIndex = -1
-                        val headerRow = sheet.getRow(0)
-                        if (headerRow != null) {
-                            for (cell in headerRow) {
-                                if (cell.stringCellValue.trim().equals("Bloque", ignoreCase = true)) {
-                                    blockColumnIndex = cell.columnIndex
-                                    break
-                                }
-                            }
-                        }
-                        
-                        if (blockColumnIndex != -1) {
-                            // Leer filas
-                            for (i in 1..sheet.lastRowNum) {
-                                val row = sheet.getRow(i)
-                                if (row != null) {
-                                    val cell = row.getCell(blockColumnIndex)
-                                    if (cell != null) {
-                                        val value = when (cell.cellType) {
-                                            org.apache.poi.ss.usermodel.CellType.STRING -> cell.stringCellValue.trim()
-                                            org.apache.poi.ss.usermodel.CellType.NUMERIC -> cell.numericCellValue.toLong().toString()
-                                            else -> ""
-                                        }
-                                        if (value.isNotEmpty()) {
-                                            extractedBlocks.add(value)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        workbook.close()
-                    }
-                    extractedBlocks
+                val cat = NetworkModule.apiService.getCatalogos(NetworkModule.API_KEY)
+                // Respuesta vacía = problema del servidor: no se borra el catálogo que ya hay en el equipo.
+                if (cat.bloques.isEmpty() || cat.afectaciones.isEmpty()) {
+                    onResult("El servidor no devolvió bloques o afectaciones; se conserva el catálogo actual")
+                    return@launch
                 }
-                
-                if (blocks.isNotEmpty()) {
-                    val entities = blocks.map { CachedBlockEntity(it) }
+                database.withTransaction {
                     dao.clearCachedBlocks()
-                    dao.insertBlocks(entities)
-                    onResult("Se cargaron ${blocks.size} bloques exitosamente")
-                } else {
-                    onResult("Error: No se encontraron bloques o la columna 'Bloque' no existe")
+                    dao.insertBlocks(cat.bloques.map { CachedBlockEntity(it) })
+                    dao.clearCachedAfectaciones()
+                    dao.insertAfectaciones(cat.afectaciones.map { CachedAfectacionEntity(it) })
                 }
+                onResult("Catálogos actualizados: ${cat.bloques.size} bloques, ${cat.afectaciones.size} afectaciones")
+            } catch (e: retrofit2.HttpException) {
+                onResult(
+                    if (e.code() == 401 || e.code() == 503) "Clave API inválida o no configurada en el servidor (HTTP ${e.code()})"
+                    else "Error HTTP ${e.code()} al actualizar catálogos"
+                )
             } catch (e: Exception) {
-                e.printStackTrace()
-                onResult("Error al leer el archivo Excel: ${e.message}")
+                onResult("Sin conexión: ${e.message}")
+            } finally {
+                isUpdatingCatalogs = false
             }
         }
     }
@@ -273,7 +209,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     fun saveRecord(onResult: (String?) -> Unit) {
         val binNum = numeroBin.toIntOrNull()
         val isBlockValid = availableBlocks.value.contains(bloque)
-        if (!isBlockValid) { onResult("El bloque ingresado no existe en la lista de grupos cargada"); return }
+        if (!isBlockValid) { onResult("El bloque no existe en el catálogo. Actualiza catálogos desde Inicio"); return }
         if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
 
         // Validate weight <= 5000
@@ -353,9 +289,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch { dao.deleteAll() }
     }
 
-    fun exportToCsv(context: Context) {
+    /** estado: null = todos, o "Enviado" / "Pendiente" / "Error" (ver estadoDe). */
+    fun exportToCsv(context: Context, estado: String? = null) {
         viewModelScope.launch {
-            CsvExporter.exportAndShare(context, records.value)
+            val lista = records.value.filter { estado == null || estadoDe(it) == estado }
+            CsvExporter.exportAndShare(context, lista, estado ?: "Todos")
         }
     }
 
@@ -366,52 +304,11 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     fun uploadRecord(record: OrganoRecordEntity, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             isUploading = true
-            try {
-                val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
-
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
-
-                val request = OrganoUploadRequest(
-                    fecha_registro = sdf.format(Date(record.fechaRegistro)),
-                    bloque = record.bloque,
-                    numero_bin = record.numeroBin.toString(),
-                    observaciones = record.observaciones,
-                    usuario = usuario,
-                    fotografia = fotoBase64,
-                    // M1
-                    m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez.toString(), m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
-                    // M2
-                    m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez.toString(), m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
-                    // M3
-                    m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez.toString(), m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
-                    // M4
-                    m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez.toString(), m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
-                    // M5
-                    m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez.toString(), m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
-                )
-
-                val response = NetworkModule.apiService.uploadRecord(request)
-                if (response.status == "ok") {
-                    dao.updateSyncStatus(record.id, true)
-                    onResult(null)
-                } else {
-                    onResult(response.error ?: "Error desconocido en el servidor")
-                }
-            } catch (e: retrofit2.HttpException) {
-                e.printStackTrace()
-                val errorBody = try { e.response()?.errorBody()?.string() } catch (ex: Exception) { null }
-                android.util.Log.e("OrganoViewModel", "HTTP Error Body: $errorBody", e)
-                onResult("Error HTTP ${e.code()}: ${errorBody ?: e.message()}")
-            } catch (e: Exception) {
-                e.printStackTrace()
-                onResult("Error de red: ${e.message}")
-            } finally {
-                isUploading = false
-            }
+            try { onResult(send(record)) } finally { isUploading = false }
         }
     }
 
+    /** Envía todo lo no enviado: pendientes y los que tuvieron error. */
     fun uploadAllUnsyncedRecords(onResult: (String) -> Unit) {
         viewModelScope.launch {
             val pending = records.value.filter { !it.isSynced }
@@ -419,51 +316,64 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 onResult("No hay registros pendientes")
                 return@launch
             }
-
             isUploading = true
-            var successCount = 0
-            var errorCount = 0
-
-            pending.forEach { record ->
-                try {
-                    val fotoBase64 = record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val usuario = "${Build.MANUFACTURER} ${Build.MODEL}"
-
-                    val request = OrganoUploadRequest(
-                        fecha_registro = sdf.format(Date(record.fechaRegistro)),
-                        bloque = record.bloque,
-                        numero_bin = record.numeroBin.toString(),
-                        observaciones = record.observaciones,
-                        usuario = usuario,
-                        fotografia = fotoBase64,
-                        m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez.toString(), m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
-                        m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez.toString(), m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
-                        m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez.toString(), m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
-                        m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez.toString(), m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
-                        m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez.toString(), m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
-                    )
-
-                    val response = NetworkModule.apiService.uploadRecord(request)
-                    if (response.status == "ok") {
-                        dao.updateSyncStatus(record.id, true)
-                        successCount++
-                    } else {
-                        errorCount++
-                    }
-                } catch (e: retrofit2.HttpException) {
-                    e.printStackTrace()
-                    val errorBody = try { e.response()?.errorBody()?.string() } catch (ex: Exception) { null }
-                    android.util.Log.e("OrganoViewModel", "HTTP Error Body in uploadAll: $errorBody", e)
-                    errorCount++
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    errorCount++
-                }
+            try {
+                val errores = pending.count { send(it) != null }
+                onResult("Envío terminado: ${pending.size - errores} exitosos, $errores con error")
+            } finally {
+                isUploading = false
             }
-            isUploading = false
-            onResult("Sincronización terminada: $successCount exitosos, $errorCount errores")
         }
+    }
+
+    fun clearLogs() {
+        viewModelScope.launch { dao.clearLogs() }
+    }
+
+    /** Envía un registro, guarda su estado y deja log. Devuelve null si salió bien o el mensaje de error. */
+    private suspend fun send(record: OrganoRecordEntity): String? {
+        val error: String? = try {
+            val response = NetworkModule.apiService.uploadRecord(buildRequest(record))
+            if (response.status == "ok") null else (response.error ?: "Error desconocido en el servidor")
+        } catch (e: retrofit2.HttpException) {
+            val errorBody = try { e.response()?.errorBody()?.string() } catch (ex: Exception) { null }
+            android.util.Log.e("OrganoViewModel", "HTTP Error Body: $errorBody", e)
+            "Error HTTP ${e.code()}: ${errorBody?.take(300) ?: e.message()}"
+        } catch (e: Exception) {
+            "Error de red: ${e.message}"
+        }
+        dao.updateSyncStatus(record.id, error == null, error ?: "")
+        dao.insertLog(
+            SyncLogEntity(
+                fecha = System.currentTimeMillis(),
+                recordId = record.id,
+                bloque = record.bloque,
+                numeroBin = record.numeroBin,
+                exito = error == null,
+                mensaje = error ?: "Enviado correctamente"
+            )
+        )
+        return error
+    }
+
+    private suspend fun buildRequest(record: OrganoRecordEntity): OrganoUploadRequest {
+        val fotoBase64 = withContext(Dispatchers.IO) {
+            record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
+        }
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return OrganoUploadRequest(
+            fecha_registro = sdf.format(Date(record.fechaRegistro)),
+            bloque = record.bloque,
+            numero_bin = record.numeroBin.toString(),
+            observaciones = record.observaciones,
+            usuario = "${Build.MANUFACTURER} ${Build.MODEL}",
+            fotografia = fotoBase64,
+            m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez.toString(), m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
+            m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez.toString(), m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
+            m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez.toString(), m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
+            m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez.toString(), m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
+            m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez.toString(), m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
+        )
     }
 
     private fun clearForm() {

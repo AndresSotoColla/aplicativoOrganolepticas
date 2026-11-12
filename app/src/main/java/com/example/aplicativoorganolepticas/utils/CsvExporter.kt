@@ -7,13 +7,14 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
+import com.example.aplicativoorganolepticas.ui.viewmodel.estadoDe
 import java.text.SimpleDateFormat
 import java.util.*
 
 object CsvExporter {
-    fun exportAndShare(context: Context, records: List<OrganoRecordEntity>) {
+    fun exportAndShare(context: Context, records: List<OrganoRecordEntity>, etiqueta: String = "Todos") {
         if (records.isEmpty()) {
-            Toast.makeText(context, "No hay registros para exportar", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "No hay registros ($etiqueta) para descargar", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -27,7 +28,7 @@ object CsvExporter {
                 "m2_peso,m2_color,m2_brix,m2_prueba_acidez,m2_acidez,m2_translucidez,m2_categoria,m2_afectaciones," +
                 "m3_peso,m3_color,m3_brix,m3_prueba_acidez,m3_acidez,m3_translucidez,m3_categoria,m3_afectaciones," +
                 "m4_peso,m4_color,m4_brix,m4_prueba_acidez,m4_acidez,m4_translucidez,m4_categoria,m4_afectaciones," +
-                "m5_peso,m5_color,m5_brix,m5_prueba_acidez,m5_acidez,m5_translucidez,m5_categoria,m5_afectaciones,usuario\n"
+                "m5_peso,m5_color,m5_brix,m5_prueba_acidez,m5_acidez,m5_translucidez,m5_categoria,m5_afectaciones,usuario,estado,ultimo_error\n"
 
         val sb = StringBuilder()
         records.forEach { r ->
@@ -45,10 +46,10 @@ object CsvExporter {
             sb.append("${r.m4PesoFruta},${r.m4ColorExterno},${r.m4GradosBrix},${if (r.m4PruebaAcidez) "Sí" else "No"},${r.m4Acidez},${r.m4AvanceTranslucidez},${r.m4Categoria},\"${r.m4Afectaciones}\",")
             // Muestra 5
             sb.append("${r.m5PesoFruta},${r.m5ColorExterno},${r.m5GradosBrix},${if (r.m5PruebaAcidez) "Sí" else "No"},${r.m5Acidez},${r.m5AvanceTranslucidez},${r.m5Categoria},\"${r.m5Afectaciones}\",")
-            sb.append("$deviceUser\n")
+            sb.append("$deviceUser,${estadoDe(r)},\"${r.ultimoError.replace('"', '\'')}\"\n")
         }
 
-        val fileName = "Organolepticas_${System.currentTimeMillis()}.csv"
+        val fileName = "Organolepticas_${etiqueta}_${System.currentTimeMillis()}.csv"
         val content = bom + header + sb.toString()
 
         try {

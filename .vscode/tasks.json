@@ -1,0 +1,123 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "APK: compilar (GitHub o local)",
+      "detail": "Ctrl+Shift+B. Pregunta donde compilar (GitHub Actions o este PC) y que APK (prueba o firmado). Queda en apk/",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/apk/apk.ps1",
+        "-Modo",
+        "${input:apkModo}",
+        "-Tipo",
+        "${input:apkTipo}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "APK: compilar local e instalar en el emulador/celular",
+      "detail": "Compila en este PC (APK de prueba) y lo instala y abre en el emulador o en el celular conectado por USB",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/apk/apk.ps1",
+        "-Modo",
+        "Local",
+        "-Tipo",
+        "debug",
+        "-Instalar"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "APK: instalar el ultimo en el emulador/celular",
+      "detail": "Abre el emulador (o usa el celular USB) e instala el APK mas reciente de la carpeta apk",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/apk/emulador.ps1",
+        "-Instalar"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": true,
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "apkModo",
+      "type": "pickString",
+      "description": "Donde compilar el APK",
+      "options": [
+        {
+          "label": "GitHub (no necesita Android Studio; compila lo que esta en GitHub)",
+          "value": "GitHub"
+        },
+        {
+          "label": "Local (este PC, con Java y Android SDK)",
+          "value": "Local"
+        }
+      ],
+      "default": "GitHub"
+    },
+    {
+      "id": "apkTipo",
+      "type": "pickString",
+      "description": "Que APK",
+      "options": [
+        {
+          "label": "Prueba (debug)",
+          "value": "debug"
+        },
+        {
+          "label": "Firmado (release, con tu llave)",
+          "value": "release"
+        }
+      ],
+      "default": "debug"
+    }
+  ]
+}

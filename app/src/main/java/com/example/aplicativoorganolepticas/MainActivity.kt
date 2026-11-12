@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.example.aplicativoorganolepticas.ui.screens.DataScreen
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -35,16 +38,24 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(innerPadding)
                     ) {
                         composable("home") {
+                            val bloques by viewModel.availableBlocks.collectAsState()
+                            val afectaciones by viewModel.afectacionOptions.collectAsState()
                             HomeScreen(
                                 onNavigateToForm = { navController.navigate("form") },
                                 onNavigateToHistory = { navController.navigate("history") },
-                                onExport = { viewModel.exportToCsv(this@MainActivity) },
-                                onLoadGroups = { uri ->
-                                    viewModel.loadBlocksFromExcel(uri, this@MainActivity) { msg ->
+                                onNavigateToData = { navController.navigate("data") },
+                                onUpdateCatalogs = {
+                                    viewModel.actualizarCatalogos { msg ->
                                         Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                                     }
-                                }
+                                },
+                                isUpdatingCatalogs = viewModel.isUpdatingCatalogs,
+                                catalogInfo = if (bloques.isEmpty()) "Sin catálogos: actualízalos con conexión antes de registrar"
+                                              else "${bloques.size} bloques · ${afectaciones.size - 1} afectaciones en el equipo"
                             )
+                        }
+                        composable("data") {
+                            DataScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
                         }
                         composable("form") {
                             OrganoFormScreen(

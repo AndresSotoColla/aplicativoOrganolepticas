@@ -8,10 +8,10 @@ import retrofit2.http.GET
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-data class CronogramaItem(
-    val bloque: String,
-    val fecha_actividad: String = "",
-    val observaciones: String = ""
+/** Respuesta de GET consultor/api/organolepticas/catalogos_movil (Enfermedades_Plagas_planta_fruta). */
+data class CatalogosResponse(
+    val bloques: List<String>,
+    val afectaciones: List<String>
 )
 
 data class OrganoUploadRequest(
@@ -36,8 +36,8 @@ data class UploadResponse(
 )
 
 interface OrganoApiService {
-    @GET("consultor/api/cronograma_semana_organolepticas")
-    suspend fun getCronograma(): List<CronogramaItem>
+    @GET("consultor/api/organolepticas/catalogos_movil")
+    suspend fun getCatalogos(@retrofit2.http.Header("X-API-Key") apiKey: String): CatalogosResponse
 
     @retrofit2.http.POST("consultor/cargue_json_organolepticas")
     suspend fun uploadRecord(@retrofit2.http.Body request: OrganoUploadRequest): UploadResponse
@@ -46,6 +46,8 @@ interface OrganoApiService {
 
 object NetworkModule {
     private const val BASE_URL = "https://interno.control.agricolaguapa.com/"
+    // Clave de MOVIL_API_KEYS del servidor; se inyecta en compilación (local.properties o variable de entorno ORGANO_API_KEY).
+    const val API_KEY = com.example.aplicativoorganolepticas.BuildConfig.ORGANO_API_KEY
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())

@@ -4,15 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,7 +19,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
-import com.example.aplicativoorganolepticas.ui.theme.LightBeige
 import com.example.aplicativoorganolepticas.ui.components.VideoBackground
 import com.example.aplicativoorganolepticas.R
 
@@ -30,14 +26,11 @@ import com.example.aplicativoorganolepticas.R
 fun HomeScreen(
     onNavigateToForm: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onExport: () -> Unit,
-    onLoadGroups: (Uri) -> Unit
+    onNavigateToData: () -> Unit,
+    onUpdateCatalogs: () -> Unit,
+    isUpdatingCatalogs: Boolean,
+    catalogInfo: String
 ) {
-    val excelLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            onLoadGroups(uri)
-        }
-    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -95,27 +88,26 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             HomeButton(
-                text = "Descargar Datos",
-                icon = Icons.Default.Download,
+                text = "Cargar y Descargar Datos",
+                icon = Icons.Default.SyncAlt,
                 color = DarkBeige,
-                onClick = onExport
+                onClick = onNavigateToData
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             HomeButton(
-                text = "Cargar Grupos",
-                icon = Icons.Default.UploadFile,
+                text = if (isUpdatingCatalogs) "Actualizando..." else "Actualizar Catálogos",
+                icon = Icons.Default.Refresh,
                 color = DarkBeige,
-                onClick = {
-                    excelLauncher.launch(
-                        arrayOf(
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "application/vnd.ms-excel",
-                            "application/octet-stream"
-                        )
-                    )
-                }
+                onClick = { if (!isUpdatingCatalogs) onUpdateCatalogs() }
+            )
+            Text(
+                text = catalogInfo,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
     }
