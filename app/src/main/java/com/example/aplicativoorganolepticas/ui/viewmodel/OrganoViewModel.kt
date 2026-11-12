@@ -1,39 +1,35 @@
 package com.example.aplicativoorganolepticas.ui.viewmodel
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import androidx.compose.runtime.*
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewModelScope
-import com.example.aplicativoorganolepticas.data.AppDatabase
-import com.example.aplicativoorganolepticas.data.CachedAfectacionEntity
-import com.example.aplicativoorganolepticas.data.CachedBlockEntity
-import com.example.aplicativoorganolepticas.data.SyncLogEntity
-import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
-import com.example.aplicativoorganolepticas.data.network.NetworkModule
-import com.example.aplicativoorganolepticas.utils.CsvExporter
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.room.withTransaction
+import com.example.aplicativoorganolepticas.data.*
+import com.example.aplicativoorganolepticas.data.network.NetworkModule
+import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
+import com.example.aplicativoorganolepticas.utils.CsvExporter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import android.util.Base64
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import java.io.ByteArrayOutputStream
-import com.example.aplicativoorganolepticas.data.network.OrganoUploadRequest
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
-// State for each of the 5 samples
+// Estado de cada una de las 5 muestras en el formulario
 data class SampleState(
     val pesoFruta: String = "",
     val colorExterno: String = "1.0",
@@ -42,8 +38,12 @@ data class SampleState(
     val acidez: String = "",
     val avanceTranslucidez: Int = 10,
     val categoria: String = "Especial",
-    val afectaciones: List<String> = listOf("Ninguna")
-)
+    val afectaciones: List<String> = listOf(NINGUNA)
+) {
+    val tienePeso get() = (pesoFruta.toDoubleOrNull() ?: 0.0) > 0.0
+}
+
+const val NINGUNA = "Ninguna"
 
 /** Estado de envío de un registro: "Enviado", "Error" o "Pendiente". */
 fun estadoDe(r: OrganoRecordEntity): String = when {
@@ -51,6 +51,41 @@ fun estadoDe(r: OrganoRecordEntity): String = when {
     r.ultimoError.isNotEmpty() -> "Error"
     else -> "Pendiente"
 }
+
+/** Número legible: 0 = vacío ("—"), sin ".0" si es entero. */
+fun numTxt(d: Double): String = when {
+    d == 0.0 -> "—"
+    d % 1.0 == 0.0 -> d.toLong().toString()
+    else -> d.toString()
+}
+
+/** Campos comparables de un registro (etiqueta, valor legible), en el orden del formulario. */
+fun camposDe(r: OrganoRecordEntity): List<Pair<String, String>> =
+    listOf(
+        "Bloque" to r.bloque,
+        "Grupo" to r.grupo.ifEmpty { "—" },
+        "Bin" to "${r.numeroBin}",
+        "Observaciones" to r.observaciones.ifEmpty { "—" },
+        "Foto" to if (r.fotoPath.isEmpty()) "Sin foto" else "Foto ${File(r.fotoPath).name}"
+    ) + r.muestras().flatMapIndexed { i, m ->
+        val p = "M${i + 1}"
+        listOf(
+            "$p peso (g)" to numTxt(m.peso),
+            "$p color externo" to m.color,
+            "$p brix" to numTxt(m.brix),
+            "$p prueba acidez" to if (m.pruebaAcidez) "Sí" else "No",
+            "$p gasto NaOH (ml)" to numTxt(m.acidez),
+            "$p translucidez" to "${m.translucidez}%",
+            "$p categoría" to m.categoria,
+            "$p afectaciones" to m.afectaciones
+        )
+    }
+
+/** Lista "Campo: antes → después" de lo que cambió entre dos versiones de un registro. */
+fun cambiosEntre(antes: OrganoRecordEntity, despues: OrganoRecordEntity): List<String> =
+    camposDe(antes).zip(camposDe(despues))
+        .filter { (a, d) -> a.second != d.second }
+        .map { (a, d) -> "${a.first}: ${a.second} → ${d.second}" }
 
 class OrganoViewModel(private val context: Context) : ViewModel() {
 
@@ -67,105 +102,236 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    // ─── Form State: Global Fields ─────────────────────────────────────────
+    // ─── Formulario ────────────────────────────────────────────────────────
     var bloque by mutableStateOf("")
+        private set
+    var grupo by mutableStateOf("")
     var numeroBin by mutableStateOf("")
     var observaciones by mutableStateOf("")
     var globalFotoPath by mutableStateOf("")
-    var globalFotoUri by mutableStateOf<Uri?>(null)
-
-    // "Ninguna" es local (el servidor la ignora); el resto viene del catálogo de afectaciones activas.
-    val afectacionOptions: StateFlow<List<String>> = dao.getCachedAfectaciones()
-        .map { listOf("Ninguna") + it }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("Ninguna"))
-
-    // ─── Form State: 5 Samples ─────────────────────────────────────────────
-    var samples = mutableStateListOf(
-        SampleState(), SampleState(), SampleState(), SampleState(), SampleState()
-    )
-
-    // URI for pending camera capture (which sample)
-    private var pendingSampleIndex by mutableIntStateOf(-1)
-    var pendingSampleIndexForPermission by mutableIntStateOf(-1)  // set before requesting permission
-    var pendingPhotoUri by mutableStateOf<Uri?>(null)
         private set
+    val samples = mutableStateListOf(SampleState(), SampleState(), SampleState(), SampleState(), SampleState())
 
+    private var pendingPhotoPath: String? = null
 
-    // ─── Database ──────────────────────────────────────────────────────────
-    private val _records = dao.getAllRecords()
+    // ─── Base de datos ─────────────────────────────────────────────────────
+    val records: StateFlow<List<OrganoRecordEntity>> = dao.getAllRecords()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val records: StateFlow<List<OrganoRecordEntity>> = _records
 
-    val availableBlocks: StateFlow<List<String>> = dao.getCachedBlocks()
+    val blocksInfo: StateFlow<List<CachedBlockEntity>> = dao.getCachedBlocks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableBlocks: StateFlow<List<String>> = blocksInfo.map { l -> l.map { it.bloque } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Catálogo de afectaciones (sin "Ninguna", que la app pone siempre de primera). */
+    val afectacionesCatalogo: StateFlow<List<CachedAfectacionEntity>> = dao.getCachedAfectaciones()
+        .map { l -> l.filter { !it.nombre.equals(NINGUNA, ignoreCase = true) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val logs: StateFlow<List<SyncLogEntity>> = dao.getLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // ─── Sample Updates ────────────────────────────────────────────────────
-    fun updateSamplePeso(index: Int, value: String) {
-        samples[index] = samples[index].copy(pesoFruta = value)
+    fun infoBloque(b: String): CachedBlockEntity? = blocksInfo.value.firstOrNull { it.bloque == b }
+
+    /** Al cambiar el bloque se propone su grupo: el GF y, si no tiene, el grupo siembra. El usuario puede cambiarlo. */
+    fun onBloqueChange(v: String) {
+        bloque = v
+        grupo = infoBloque(v)?.let { it.grupoForza.ifEmpty { it.grupoSiembra } } ?: ""
     }
-    fun updateSampleColor(index: Int, value: String) {
-        samples[index] = samples[index].copy(colorExterno = value)
-    }
-    fun updateSampleBrix(index: Int, value: String) {
-        samples[index] = samples[index].copy(gradosBrix = value)
-    }
+
+    // ─── Muestras ──────────────────────────────────────────────────────────
+    fun updateSamplePeso(index: Int, value: String) { samples[index] = samples[index].copy(pesoFruta = value) }
+    fun updateSampleColor(index: Int, value: String) { samples[index] = samples[index].copy(colorExterno = value) }
+    fun updateSampleBrix(index: Int, value: String) { samples[index] = samples[index].copy(gradosBrix = value) }
     fun updateSamplePruebaAcidez(index: Int, value: Boolean) {
         samples[index] = samples[index].copy(pruebaAcidez = value, acidez = if (!value) "" else samples[index].acidez)
     }
-    fun updateSampleAcidez(index: Int, value: String) {
-        samples[index] = samples[index].copy(acidez = value)
-    }
-    fun updateSampleTranslucidez(index: Int, value: Int) {
-        samples[index] = samples[index].copy(avanceTranslucidez = value)
-    }
-    fun updateSampleCategoria(index: Int, value: String) {
-        samples[index] = samples[index].copy(categoria = value)
-    }
+    fun updateSampleAcidez(index: Int, value: String) { samples[index] = samples[index].copy(acidez = value) }
+    fun updateSampleTranslucidez(index: Int, value: Int) { samples[index] = samples[index].copy(avanceTranslucidez = value) }
+    fun updateSampleCategoria(index: Int, value: String) { samples[index] = samples[index].copy(categoria = value) }
+
+    /** "Ninguna" excluye a las demás: marcarla limpia la lista; marcar otra afectación desmarca "Ninguna". */
     fun updateSampleAfectacionToggle(index: Int, item: String) {
         val current = samples[index].afectaciones.toMutableList()
-        if (item == "Ninguna") {
-            current.clear()
-            current.add("Ninguna")
+        if (item == NINGUNA) {
+            current.clear(); current.add(NINGUNA)
         } else {
-            current.remove("Ninguna")
-            if (current.contains(item)) {
-                current.remove(item)
-                if (current.isEmpty()) current.add("Ninguna")
-            } else {
-                current.add(item)
-            }
+            current.remove(NINGUNA)
+            if (!current.remove(item)) current.add(item)
+            if (current.isEmpty()) current.add(NINGUNA)
         }
         samples[index] = samples[index].copy(afectaciones = current)
     }
 
-    // ─── Photo Handling ────────────────────────────────────────────────────
+    // ─── Foto ──────────────────────────────────────────────────────────────
     fun prepareCameraForGlobal(): Uri {
         val imageDir = File(context.externalCacheDir ?: context.cacheDir, "images").apply { mkdirs() }
         val imageFile = File.createTempFile("organo_global_", ".jpg", imageDir)
-        val uri = FileProvider.getUriForFile(
-            context,
-            "com.example.aplicativoorganolepticas.fileprovider",
-            imageFile
-        )
-        pendingPhotoUri = uri
-        globalFotoPath = imageFile.absolutePath
-        return uri
+        pendingPhotoPath = imageFile.absolutePath
+        return FileProvider.getUriForFile(context, "com.example.aplicativoorganolepticas.fileprovider", imageFile)
     }
-
-    // Deprecated for per-sample, but kept generic for permissions if needed
-    fun prepareCameraForSample(index: Int): Uri = prepareCameraForGlobal()
 
     fun onPhotoTaken(success: Boolean) {
-        if (success) {
-            globalFotoUri = pendingPhotoUri
-        }
-        pendingPhotoUri = null
+        val path = pendingPhotoPath ?: return
+        if (success) globalFotoPath = path else File(path).delete()
+        pendingPhotoPath = null
     }
 
-    // Multi-select helpers are now handled per-sample in updateSampleAfectacionToggle
+    // ─── Formulario <-> registro ───────────────────────────────────────────
+    private fun formToEntity(base: OrganoRecordEntity?): OrganoRecordEntity {
+        val ms = samples.map {
+            Muestra(
+                peso = it.pesoFruta.toDoubleOrNull() ?: 0.0,
+                color = it.colorExterno,
+                brix = it.gradosBrix.toDoubleOrNull() ?: 0.0,
+                pruebaAcidez = it.pruebaAcidez,
+                acidez = it.acidez.toDoubleOrNull() ?: 0.0,
+                translucidez = it.avanceTranslucidez,
+                categoria = it.categoria,
+                afectaciones = it.afectaciones.joinToString(", ")
+            )
+        }
+        return (base ?: OrganoRecordEntity(fechaRegistro = System.currentTimeMillis(), bloque = "", numeroBin = 0))
+            .copy(
+                bloque = bloque,
+                grupo = grupo.trim().uppercase(),
+                numeroBin = numeroBin.toIntOrNull() ?: 0,
+                fotoPath = globalFotoPath,
+                observaciones = observaciones
+            )
+            .conMuestras(ms)
+    }
+
+    private fun loadIntoForm(e: OrganoRecordEntity) {
+        fun txt(d: Double) = if (d == 0.0) "" else numTxt(d)
+        bloque = e.bloque
+        grupo = e.grupo
+        numeroBin = if (e.numeroBin == 0) "" else e.numeroBin.toString()
+        observaciones = e.observaciones
+        globalFotoPath = e.fotoPath
+        e.muestras().forEachIndexed { i, m ->
+            samples[i] = SampleState(
+                pesoFruta = txt(m.peso),
+                colorExterno = m.color.ifEmpty { "1.0" },
+                gradosBrix = txt(m.brix),
+                pruebaAcidez = m.pruebaAcidez,
+                acidez = txt(m.acidez),
+                avanceTranslucidez = m.translucidez,
+                categoria = m.categoria,
+                afectaciones = m.afectaciones.split(",").map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(NINGUNA) }
+            )
+        }
+    }
+
+    private fun clearForm() {
+        bloque = ""; grupo = ""; numeroBin = ""; observaciones = ""; globalFotoPath = ""
+        for (i in 0 until 5) samples[i] = SampleState()
+    }
+
+    /** null si el formulario es válido; si no, el mensaje para el usuario. */
+    private fun validar(): String? {
+        val binNum = numeroBin.toIntOrNull()
+        if (!availableBlocks.value.contains(bloque)) return "El bloque no existe en el catálogo. Actualiza catálogos desde Inicio"
+        if (binNum == null || binNum < 1 || binNum > 200) return "El número de Bin debe ser entre 1 y 200"
+        if (samples.none { it.tienePeso }) return "Ingresa el peso de al menos una muestra (las muestras sin peso no se cargan)"
+        samples.forEachIndexed { i, s ->
+            if ((s.pesoFruta.toDoubleOrNull() ?: 0.0) > 5000) return "El peso de la muestra ${i + 1} no puede ser mayor a 5000 g"
+        }
+        return null
+    }
+
+    fun saveRecord(onResult: (String?) -> Unit) {
+        validar()?.let { onResult(it); return }
+        val record = formToEntity(null).copy(fechaRegistro = System.currentTimeMillis())
+        viewModelScope.launch {
+            dao.insertRecord(record)
+            clearForm()
+            onResult(null)
+        }
+    }
+
+    // ─── Edición (solo registros no enviados) ──────────────────────────────
+    var editOriginal by mutableStateOf<OrganoRecordEntity?>(null)
+        private set
+    val isEditing get() = editOriginal != null
+
+    // Formulario nuevo que estaba a medias al entrar a editar: se restaura al salir de la edición.
+    private var borrador: OrganoRecordEntity? = null
+
+    fun startEdit(r: OrganoRecordEntity) {
+        if (editOriginal == null) borrador = formToEntity(null)
+        editOriginal = r
+        loadIntoForm(r)
+    }
+
+    /** Cambios del formulario respecto al registro original ("Campo: antes → después"). */
+    fun cambiosPendientes(): List<String> = editOriginal?.let { cambiosEntre(it, formToEntity(it)) } ?: emptyList()
+
+    fun cancelEdit() {
+        editOriginal = null
+        borrador?.let { loadIntoForm(it) } ?: clearForm()
+        borrador = null
+    }
+
+    fun saveEdit(onResult: (String?) -> Unit) {
+        val orig = editOriginal ?: return
+        validar()?.let { onResult(it); return }
+        if (records.value.firstOrNull { it.id == orig.id }?.isSynced == true) {
+            onResult("Este registro ya se envió; no se puede editar"); return
+        }
+        // Editado = vuelve a quedar pendiente (se borra el último error).
+        val nuevo = formToEntity(orig).copy(ultimoError = "")
+        viewModelScope.launch {
+            dao.updateRecord(nuevo)
+            cancelEdit()
+            onResult(null)
+        }
+    }
+
+    // ─── Borrado ───────────────────────────────────────────────────────────
+    fun deleteRecord(record: OrganoRecordEntity) {
+        viewModelScope.launch {
+            dao.deleteRecord(record)
+            withContext(Dispatchers.IO) { if (record.fotoPath.isNotEmpty()) File(record.fotoPath).delete() }
+        }
+    }
+
+    /** Borra registros (todos enviados), sus fotos y los logs. Se niega si queda algo sin enviar. */
+    fun borrarCache(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val todos = dao.getAllRecordsOnce()
+            val sinEnviar = todos.count { !it.isSynced }
+            if (sinEnviar > 0) {
+                onResult("Hay $sinEnviar registro(s) sin enviar: envíalos o elimínalos antes de borrar la caché")
+                return@launch
+            }
+            database.withTransaction {
+                dao.deleteAll()
+                dao.clearLogs()
+            }
+            withContext(Dispatchers.IO) { todos.forEach { if (it.fotoPath.isNotEmpty()) File(it.fotoPath).delete() } }
+            onResult("Caché borrada: ${todos.size} registro(s) eliminados del equipo")
+        }
+    }
+
+    // ─── Descargas ─────────────────────────────────────────────────────────
+    /** estado: null = todos, o "Enviado" / "Pendiente" / "Error" (ver estadoDe). */
+    fun exportToCsv(context: Context, estado: String? = null) {
+        viewModelScope.launch {
+            val lista = records.value.filter { estado == null || estadoDe(it) == estado }
+            CsvExporter.exportAndShare(context, lista, estado ?: "Todos")
+        }
+    }
+
+    /** Respaldo completo (registros + logs) en JSON, en Descargas. */
+    fun descargarRespaldoJson(context: Context) {
+        viewModelScope.launch {
+            val regs = dao.getAllRecordsOnce()
+            val logsTodos = dao.getAllLogsOnce()
+            CsvExporter.exportarRespaldoJson(context, regs, logsTodos)
+        }
+    }
 
     // ─── Catálogos (bloques y afectaciones activos desde el servidor) ─────
     var isUpdatingCatalogs by mutableStateOf(false)
@@ -180,18 +346,23 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
             isUpdatingCatalogs = true
             try {
                 val cat = NetworkModule.apiService.getCatalogos(NetworkModule.API_KEY)
+                val bloques = cat.bloques_info?.map { CachedBlockEntity(it.bloque, it.grupo_forza, it.grupo_siembra) }
+                    ?: cat.bloques.map { CachedBlockEntity(it) }
+                val afects = cat.afectaciones_info?.map { CachedAfectacionEntity(it.nombre, it.tipo) }
+                    ?: cat.afectaciones.map { CachedAfectacionEntity(it) }
                 // Respuesta vacía = problema del servidor: no se borra el catálogo que ya hay en el equipo.
-                if (cat.bloques.isEmpty() || cat.afectaciones.isEmpty()) {
+                if (bloques.isEmpty() || afects.isEmpty()) {
                     onResult("El servidor no devolvió bloques o afectaciones; se conserva el catálogo actual")
                     return@launch
                 }
                 database.withTransaction {
                     dao.clearCachedBlocks()
-                    dao.insertBlocks(cat.bloques.map { CachedBlockEntity(it) })
+                    dao.insertBlocks(bloques)
                     dao.clearCachedAfectaciones()
-                    dao.insertAfectaciones(cat.afectaciones.map { CachedAfectacionEntity(it) })
+                    dao.insertAfectaciones(afects)
                 }
-                onResult("Catálogos actualizados: ${cat.bloques.size} bloques, ${cat.afectaciones.size} afectaciones")
+                val nAfect = afects.count { !it.nombre.equals(NINGUNA, ignoreCase = true) }
+                onResult("Catálogos actualizados: ${bloques.size} bloques, $nAfect afectaciones")
             } catch (e: retrofit2.HttpException) {
                 onResult(
                     if (e.code() == 401 || e.code() == 503) "Clave API inválida o no configurada en el servidor (HTTP ${e.code()})"
@@ -205,99 +376,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    // ─── Save ──────────────────────────────────────────────────────────────
-    fun saveRecord(onResult: (String?) -> Unit) {
-        val binNum = numeroBin.toIntOrNull()
-        val isBlockValid = availableBlocks.value.contains(bloque)
-        if (!isBlockValid) { onResult("El bloque no existe en el catálogo. Actualiza catálogos desde Inicio"); return }
-        if (binNum == null || binNum < 1 || binNum > 200) { onResult("El número de Bin debe ser entre 1 y 200"); return }
-
-        // Validate weight <= 5000
-        samples.forEachIndexed { index, sample ->
-            val peso = sample.pesoFruta.toDoubleOrNull() ?: 0.0
-            if (peso > 5000) {
-                onResult("El peso de la muestra ${index + 1} no puede ser mayor a 5000g")
-                return
-            }
-        }
-
-        val s = samples
-        viewModelScope.launch {
-            val record = OrganoRecordEntity(
-                fechaRegistro = System.currentTimeMillis(),
-                bloque = bloque,
-                numeroBin = binNum,
-                fotoPath = globalFotoPath,
-                observaciones = observaciones,
-                // Muestra 1
-                m1PesoFruta = s[0].pesoFruta.toDoubleOrNull() ?: 0.0,
-                m1ColorExterno = s[0].colorExterno,
-                m1GradosBrix = s[0].gradosBrix.toDoubleOrNull() ?: 0.0,
-                m1PruebaAcidez = s[0].pruebaAcidez,
-                m1Acidez = s[0].acidez.toDoubleOrNull() ?: 0.0,
-                m1AvanceTranslucidez = s[0].avanceTranslucidez,
-                m1Categoria = s[0].categoria,
-                m1Afectaciones = s[0].afectaciones.joinToString(", "),
-                // Muestra 2
-                m2PesoFruta = s[1].pesoFruta.toDoubleOrNull() ?: 0.0,
-                m2ColorExterno = s[1].colorExterno,
-                m2GradosBrix = s[1].gradosBrix.toDoubleOrNull() ?: 0.0,
-                m2PruebaAcidez = s[1].pruebaAcidez,
-                m2Acidez = s[1].acidez.toDoubleOrNull() ?: 0.0,
-                m2AvanceTranslucidez = s[1].avanceTranslucidez,
-                m2Categoria = s[1].categoria,
-                m2Afectaciones = s[1].afectaciones.joinToString(", "),
-                // Muestra 3
-                m3PesoFruta = s[2].pesoFruta.toDoubleOrNull() ?: 0.0,
-                m3ColorExterno = s[2].colorExterno,
-                m3GradosBrix = s[2].gradosBrix.toDoubleOrNull() ?: 0.0,
-                m3PruebaAcidez = s[2].pruebaAcidez,
-                m3Acidez = s[2].acidez.toDoubleOrNull() ?: 0.0,
-                m3AvanceTranslucidez = s[2].avanceTranslucidez,
-                m3Categoria = s[2].categoria,
-                m3Afectaciones = s[2].afectaciones.joinToString(", "),
-                // Muestra 4
-                m4PesoFruta = s[3].pesoFruta.toDoubleOrNull() ?: 0.0,
-                m4ColorExterno = s[3].colorExterno,
-                m4GradosBrix = s[3].gradosBrix.toDoubleOrNull() ?: 0.0,
-                m4PruebaAcidez = s[3].pruebaAcidez,
-                m4Acidez = s[3].acidez.toDoubleOrNull() ?: 0.0,
-                m4AvanceTranslucidez = s[3].avanceTranslucidez,
-                m4Categoria = s[3].categoria,
-                m4Afectaciones = s[3].afectaciones.joinToString(", "),
-                // Muestra 5
-                m5PesoFruta = s[4].pesoFruta.toDoubleOrNull() ?: 0.0,
-                m5ColorExterno = s[4].colorExterno,
-                m5GradosBrix = s[4].gradosBrix.toDoubleOrNull() ?: 0.0,
-                m5PruebaAcidez = s[4].pruebaAcidez,
-                m5Acidez = s[4].acidez.toDoubleOrNull() ?: 0.0,
-                m5AvanceTranslucidez = s[4].avanceTranslucidez,
-                m5Categoria = s[4].categoria,
-                m5Afectaciones = s[4].afectaciones.joinToString(", ")
-            )
-            dao.insertRecord(record)
-            clearForm()
-            onResult(null)
-        }
-    }
-
-    fun deleteRecord(record: OrganoRecordEntity) {
-        viewModelScope.launch { dao.deleteRecord(record) }
-    }
-
-    fun deleteAllRecords() {
-        viewModelScope.launch { dao.deleteAll() }
-    }
-
-    /** estado: null = todos, o "Enviado" / "Pendiente" / "Error" (ver estadoDe). */
-    fun exportToCsv(context: Context, estado: String? = null) {
-        viewModelScope.launch {
-            val lista = records.value.filter { estado == null || estadoDe(it) == estado }
-            CsvExporter.exportAndShare(context, lista, estado ?: "Todos")
-        }
-    }
-
-    // ─── Synchronization ──────────────────────────────────────────────────
+    // ─── Envío ─────────────────────────────────────────────────────────────
     var isUploading by mutableStateOf(false)
         private set
 
@@ -311,7 +390,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
     /** Envía todo lo no enviado: pendientes y los que tuvieron error. */
     fun uploadAllUnsyncedRecords(onResult: (String) -> Unit) {
         viewModelScope.launch {
-            val pending = records.value.filter { !it.isSynced }
+            val pending = dao.getAllRecordsOnce().filter { !it.isSynced }
             if (pending.isEmpty()) {
                 onResult("No hay registros pendientes")
                 return@launch
@@ -332,7 +411,9 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
 
     /** Envía un registro, guarda su estado y deja log. Devuelve null si salió bien o el mensaje de error. */
     private suspend fun send(record: OrganoRecordEntity): String? {
-        val error: String? = try {
+        val error: String? = if (record.muestrasConPeso().isEmpty()) {
+            "Sin muestras con peso: no hay nada que cargar"
+        } else try {
             val response = NetworkModule.apiService.uploadRecord(buildRequest(record))
             if (response.status == "ok") null else (response.error ?: "Error desconocido en el servidor")
         } catch (e: retrofit2.HttpException) {
@@ -350,7 +431,7 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
                 bloque = record.bloque,
                 numeroBin = record.numeroBin,
                 exito = error == null,
-                mensaje = error ?: "Enviado correctamente"
+                mensaje = error ?: "Enviado correctamente (${record.muestrasConPeso().size} muestras)"
             )
         )
         return error
@@ -360,48 +441,34 @@ class OrganoViewModel(private val context: Context) : ViewModel() {
         val fotoBase64 = withContext(Dispatchers.IO) {
             record.fotoPath.takeIf { it.isNotEmpty() }?.let { getScaledBase64(it) }
         }
-        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val m = record.muestras()
+        // Peso null = muestra sin peso: no viaja en el JSON y el servidor no la carga.
+        fun peso(i: Int) = m[i].peso.takeIf { it > 0.0 }
         return OrganoUploadRequest(
-            fecha_registro = sdf.format(Date(record.fechaRegistro)),
+            fecha_registro = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(record.fechaRegistro)),
             bloque = record.bloque,
             numero_bin = record.numeroBin.toString(),
             observaciones = record.observaciones,
             usuario = "${Build.MANUFACTURER} ${Build.MODEL}",
             fotografia = fotoBase64,
-            m1_peso = record.m1PesoFruta, m1_color = record.m1ColorExterno, m1_brix = record.m1GradosBrix, m1_acidez = record.m1Acidez, m1_translucidez = record.m1AvanceTranslucidez.toString(), m1_categoria = record.m1Categoria, m1_afectaciones = record.m1Afectaciones,
-            m2_peso = record.m2PesoFruta, m2_color = record.m2ColorExterno, m2_brix = record.m2GradosBrix, m2_acidez = record.m2Acidez, m2_translucidez = record.m2AvanceTranslucidez.toString(), m2_categoria = record.m2Categoria, m2_afectaciones = record.m2Afectaciones,
-            m3_peso = record.m3PesoFruta, m3_color = record.m3ColorExterno, m3_brix = record.m3GradosBrix, m3_acidez = record.m3Acidez, m3_translucidez = record.m3AvanceTranslucidez.toString(), m3_categoria = record.m3Categoria, m3_afectaciones = record.m3Afectaciones,
-            m4_peso = record.m4PesoFruta, m4_color = record.m4ColorExterno, m4_brix = record.m4GradosBrix, m4_acidez = record.m4Acidez, m4_translucidez = record.m4AvanceTranslucidez.toString(), m4_categoria = record.m4Categoria, m4_afectaciones = record.m4Afectaciones,
-            m5_peso = record.m5PesoFruta, m5_color = record.m5ColorExterno, m5_brix = record.m5GradosBrix, m5_acidez = record.m5Acidez, m5_translucidez = record.m5AvanceTranslucidez.toString(), m5_categoria = record.m5Categoria, m5_afectaciones = record.m5Afectaciones
+            grupo_forza = record.grupo.ifBlank { null },
+            m1_peso = peso(0), m1_color = m[0].color, m1_brix = m[0].brix, m1_acidez = m[0].acidez, m1_translucidez = m[0].translucidez.toString(), m1_categoria = m[0].categoria, m1_afectaciones = m[0].afectaciones,
+            m2_peso = peso(1), m2_color = m[1].color, m2_brix = m[1].brix, m2_acidez = m[1].acidez, m2_translucidez = m[1].translucidez.toString(), m2_categoria = m[1].categoria, m2_afectaciones = m[1].afectaciones,
+            m3_peso = peso(2), m3_color = m[2].color, m3_brix = m[2].brix, m3_acidez = m[2].acidez, m3_translucidez = m[2].translucidez.toString(), m3_categoria = m[2].categoria, m3_afectaciones = m[2].afectaciones,
+            m4_peso = peso(3), m4_color = m[3].color, m4_brix = m[3].brix, m4_acidez = m[3].acidez, m4_translucidez = m[3].translucidez.toString(), m4_categoria = m[3].categoria, m4_afectaciones = m[3].afectaciones,
+            m5_peso = peso(4), m5_color = m[4].color, m5_brix = m[4].brix, m5_acidez = m[4].acidez, m5_translucidez = m[4].translucidez.toString(), m5_categoria = m[4].categoria, m5_afectaciones = m[4].afectaciones
         )
-    }
-
-    private fun clearForm() {
-        bloque = ""
-        numeroBin = ""
-        observaciones = ""
-        globalFotoPath = ""
-        globalFotoUri = null
-        for (i in 0 until 5) samples[i] = SampleState()
     }
 
     private fun getScaledBase64(path: String): String? {
         val file = File(path)
-        if (!file.exists()) return null
+        if (!file.exists() || file.length() == 0L) return null
         return try {
-            val options = BitmapFactory.Options()
-            options.inJustDecodeBounds = true
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
-
             var scale = 1
-            while (options.outWidth / scale / 2 >= 1024 && options.outHeight / scale / 2 >= 1024) {
-                scale *= 2
-            }
-
-            val decodeOptions = BitmapFactory.Options()
-            decodeOptions.inSampleSize = scale
-            val bitmap = BitmapFactory.decodeFile(path, decodeOptions) ?: return null
-
+            while (options.outWidth / scale / 2 >= 1024 && options.outHeight / scale / 2 >= 1024) scale *= 2
+            val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = scale }) ?: return null
             val outputStream = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
             Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)

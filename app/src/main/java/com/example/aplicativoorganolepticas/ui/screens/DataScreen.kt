@@ -117,6 +117,9 @@ fun DataScreen(viewModel: OrganoViewModel, onBack: () -> Unit) {
                         DownloadButton("Pendientes ($pendientes)", Modifier.weight(1f)) { viewModel.exportToCsv(context, "Pendiente") }
                         DownloadButton("Con error (${conError.size})", Modifier.weight(1f)) { viewModel.exportToCsv(context, "Error") }
                     }
+                    Text("Respaldo completo de la app (registros y logs) para recuperar datos:",
+                        color = Color.Black.copy(alpha = 0.7f), fontSize = 13.sp)
+                    DownloadButton("Respaldo JSON", Modifier.fillMaxWidth()) { viewModel.descargarRespaldoJson(context) }
                 }
             }
 

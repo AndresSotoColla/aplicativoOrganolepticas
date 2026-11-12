@@ -79,7 +79,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             HomeButton(
-                text = "Ver Historial",
+                text = "Datos",
                 icon = Icons.Default.History,
                 color = DarkBeige,
                 onClick = onNavigateToHistory

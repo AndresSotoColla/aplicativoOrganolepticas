@@ -8,11 +8,18 @@ import retrofit2.http.GET
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-/** Respuesta de GET consultor/api/organolepticas/catalogos_movil (Enfermedades_Plagas_planta_fruta). */
+/** Respuesta de GET consultor/api/organolepticas/catalogos_movil (Enfermedades_Plagas_planta_fruta).
+ *  *_info trae el detalle (grupos, tipo); las listas planas quedan por compatibilidad con un servidor viejo. */
 data class CatalogosResponse(
-    val bloques: List<String>,
-    val afectaciones: List<String>
+    val bloques: List<String> = emptyList(),
+    val afectaciones: List<String> = emptyList(),
+    val bloques_info: List<BloqueInfo>? = null,
+    val afectaciones_info: List<AfectacionInfo>? = null
 )
+
+data class BloqueInfo(val bloque: String, val grupo_forza: String = "", val grupo_siembra: String = "")
+
+data class AfectacionInfo(val nombre: String, val tipo: String = "")
 
 data class OrganoUploadRequest(
     val fecha_registro: String,
@@ -21,12 +28,14 @@ data class OrganoUploadRequest(
     val observaciones: String,
     val usuario: String,
     val fotografia: String? = null,
+    // Grupo elegido en la app (GF o grupo siembra). Vacío/null: el servidor lo toma de blocks_desarrollo.
+    val grupo_forza: String? = null,
     // Muestras
-    val m1_peso: Double, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: String, val m1_categoria: String, val m1_afectaciones: String,
-    val m2_peso: Double, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: String, val m2_categoria: String, val m2_afectaciones: String,
-    val m3_peso: Double, val m3_color: String, val m3_brix: Double, val m3_acidez: Double, val m3_translucidez: String, val m3_categoria: String, val m3_afectaciones: String,
-    val m4_peso: Double, val m4_color: String, val m4_brix: Double, val m4_acidez: Double, val m4_translucidez: String, val m4_categoria: String, val m4_afectaciones: String,
-    val m5_peso: Double, val m5_color: String, val m5_brix: Double, val m5_acidez: Double, val m5_translucidez: String, val m5_categoria: String, val m5_afectaciones: String
+    val m1_peso: Double?, val m1_color: String, val m1_brix: Double, val m1_acidez: Double, val m1_translucidez: String, val m1_categoria: String, val m1_afectaciones: String,
+    val m2_peso: Double?, val m2_color: String, val m2_brix: Double, val m2_acidez: Double, val m2_translucidez: String, val m2_categoria: String, val m2_afectaciones: String,
+    val m3_peso: Double?, val m3_color: String, val m3_brix: Double, val m3_acidez: Double, val m3_translucidez: String, val m3_categoria: String, val m3_afectaciones: String,
+    val m4_peso: Double?, val m4_color: String, val m4_brix: Double, val m4_acidez: Double, val m4_translucidez: String, val m4_categoria: String, val m4_afectaciones: String,
+    val m5_peso: Double?, val m5_color: String, val m5_brix: Double, val m5_acidez: Double, val m5_translucidez: String, val m5_categoria: String, val m5_afectaciones: String
 )
 
 data class UploadResponse(

@@ -7,72 +7,85 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import com.example.aplicativoorganolepticas.data.OrganoRecordEntity
+import com.example.aplicativoorganolepticas.data.SyncLogEntity
+import com.example.aplicativoorganolepticas.data.muestras
 import com.example.aplicativoorganolepticas.ui.viewmodel.estadoDe
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.text.SimpleDateFormat
 import java.util.*
 
+/** Contenido del respaldo JSON: todo lo que hay en el equipo. */
+data class RespaldoOrganolepticas(
+    val generado: String,
+    val dispositivo: String,
+    val registros: List<OrganoRecordEntity>,
+    val logs: List<SyncLogEntity>
+)
+
 object CsvExporter {
+    private val deviceUser get() = "${Build.MANUFACTURER} ${Build.MODEL}"
+
     fun exportAndShare(context: Context, records: List<OrganoRecordEntity>, etiqueta: String = "Todos") {
         if (records.isEmpty()) {
             Toast.makeText(context, "No hay registros ($etiqueta) para descargar", Toast.LENGTH_SHORT).show()
             return
         }
-
-        val bom = "\uFEFF"
-        val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val sdfShort = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val deviceUser = "${Build.MANUFACTURER} ${Build.MODEL}"
+        fun q(s: String) = "\"${s.replace('"', '\'')}\""
 
-        val header = "fecha_registro,bloque,numero_bin,observaciones," +
-                "m1_peso,m1_color,m1_brix,m1_prueba_acidez,m1_acidez,m1_translucidez,m1_categoria,m1_afectaciones," +
-                "m2_peso,m2_color,m2_brix,m2_prueba_acidez,m2_acidez,m2_translucidez,m2_categoria,m2_afectaciones," +
-                "m3_peso,m3_color,m3_brix,m3_prueba_acidez,m3_acidez,m3_translucidez,m3_categoria,m3_afectaciones," +
-                "m4_peso,m4_color,m4_brix,m4_prueba_acidez,m4_acidez,m4_translucidez,m4_categoria,m4_afectaciones," +
-                "m5_peso,m5_color,m5_brix,m5_prueba_acidez,m5_acidez,m5_translucidez,m5_categoria,m5_afectaciones,usuario,estado,ultimo_error\n"
+        val header = "fecha_registro,bloque,grupo,numero_bin,observaciones," +
+                (1..5).joinToString(",") { "m${it}_peso,m${it}_color,m${it}_brix,m${it}_prueba_acidez,m${it}_acidez,m${it}_translucidez,m${it}_categoria,m${it}_afectaciones" } +
+                ",usuario,estado,ultimo_error\n"
 
         val sb = StringBuilder()
         records.forEach { r ->
-            sb.append("${sdfShort.format(Date(r.fechaRegistro))},")
-            sb.append("${r.bloque},")
-            sb.append("${r.numeroBin},")
-            sb.append("\"${r.observaciones}\",")
-            // Muestra 1
-            sb.append("${r.m1PesoFruta},${r.m1ColorExterno},${r.m1GradosBrix},${if (r.m1PruebaAcidez) "Sí" else "No"},${r.m1Acidez},${r.m1AvanceTranslucidez},${r.m1Categoria},\"${r.m1Afectaciones}\",")
-            // Muestra 2
-            sb.append("${r.m2PesoFruta},${r.m2ColorExterno},${r.m2GradosBrix},${if (r.m2PruebaAcidez) "Sí" else "No"},${r.m2Acidez},${r.m2AvanceTranslucidez},${r.m2Categoria},\"${r.m2Afectaciones}\",")
-            // Muestra 3
-            sb.append("${r.m3PesoFruta},${r.m3ColorExterno},${r.m3GradosBrix},${if (r.m3PruebaAcidez) "Sí" else "No"},${r.m3Acidez},${r.m3AvanceTranslucidez},${r.m3Categoria},\"${r.m3Afectaciones}\",")
-            // Muestra 4
-            sb.append("${r.m4PesoFruta},${r.m4ColorExterno},${r.m4GradosBrix},${if (r.m4PruebaAcidez) "Sí" else "No"},${r.m4Acidez},${r.m4AvanceTranslucidez},${r.m4Categoria},\"${r.m4Afectaciones}\",")
-            // Muestra 5
-            sb.append("${r.m5PesoFruta},${r.m5ColorExterno},${r.m5GradosBrix},${if (r.m5PruebaAcidez) "Sí" else "No"},${r.m5Acidez},${r.m5AvanceTranslucidez},${r.m5Categoria},\"${r.m5Afectaciones}\",")
-            sb.append("$deviceUser,${estadoDe(r)},\"${r.ultimoError.replace('"', '\'')}\"\n")
+            sb.append("${sdfShort.format(Date(r.fechaRegistro))},${r.bloque},${r.grupo},${r.numeroBin},${q(r.observaciones)},")
+            r.muestras().forEach { m ->
+                sb.append("${m.peso},${m.color},${m.brix},${if (m.pruebaAcidez) "Sí" else "No"},${m.acidez},${m.translucidez},${m.categoria},${q(m.afectaciones)},")
+            }
+            sb.append("$deviceUser,${estadoDe(r)},${q(r.ultimoError)}\n")
         }
+        guardarEnDescargas(context, "Organolepticas_${etiqueta}_${System.currentTimeMillis()}.csv", "text/csv",
+            "﻿" + header + sb)
+    }
 
-        val fileName = "Organolepticas_${etiqueta}_${System.currentTimeMillis()}.csv"
-        val content = bom + header + sb.toString()
+    fun exportarRespaldoJson(context: Context, registros: List<OrganoRecordEntity>, logs: List<SyncLogEntity>) {
+        if (registros.isEmpty() && logs.isEmpty()) {
+            Toast.makeText(context, "No hay datos en el equipo para respaldar", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val respaldo = RespaldoOrganolepticas(
+            generado = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+            dispositivo = deviceUser,
+            registros = registros,
+            logs = logs
+        )
+        val json = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+            .adapter(RespaldoOrganolepticas::class.java).indent("  ").toJson(respaldo)
+        guardarEnDescargas(context, "Organolepticas_respaldo_${System.currentTimeMillis()}.json", "application/json", json)
+    }
 
+    private fun guardarEnDescargas(context: Context, fileName: String, mime: String, content: String) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
                 val cv = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
-                uri?.let {
-                    resolver.openOutputStream(it).use { out ->
-                        out?.write(content.toByteArray(Charsets.UTF_8))
-                    }
-                    Toast.makeText(context, "Guardado en Descargas: $fileName", Toast.LENGTH_LONG).show()
-                } ?: Toast.makeText(context, "Error al crear el archivo", Toast.LENGTH_SHORT).show()
+                if (uri == null) {
+                    Toast.makeText(context, "Error al crear el archivo", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                resolver.openOutputStream(uri).use { out -> out?.write(content.toByteArray(Charsets.UTF_8)) }
             } else {
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val file = java.io.File(dir, fileName)
-                file.writeText(content, Charsets.UTF_8)
-                Toast.makeText(context, "Guardado en Descargas: $fileName", Toast.LENGTH_LONG).show()
+                java.io.File(dir, fileName).writeText(content, Charsets.UTF_8)
             }
+            Toast.makeText(context, "Guardado en Descargas: $fileName", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
         }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -33,14 +34,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.example.aplicativoorganolepticas.data.CachedAfectacionEntity
 import com.example.aplicativoorganolepticas.ui.theme.DarkBeige
 import com.example.aplicativoorganolepticas.ui.theme.LightBeige
+import com.example.aplicativoorganolepticas.ui.viewmodel.NINGUNA
 import com.example.aplicativoorganolepticas.ui.viewmodel.OrganoViewModel
 import com.example.aplicativoorganolepticas.ui.viewmodel.SampleState
 import kotlinx.coroutines.launch
+import java.io.File
 
 private val FieldText = TextStyle(color = Color.Black, fontSize = 16.sp)
 private val Verde = Color(0xFF2E7D32)
+private val Rojo = Color(0xFFC62828)
+
+// Colores para diferenciar afectaciones externas e internas
+private val ExternaFondo = Color(0xFFFFE0B2)
+private val ExternaTexto = Color(0xFF8A4B00)
+private val InternaFondo = Color(0xFFD6E8FA)
+private val InternaTexto = Color(0xFF0B4F8A)
 
 @Composable
 private fun fieldColors(error: Boolean = false) = OutlinedTextFieldDefaults.colors(
@@ -49,7 +60,30 @@ private fun fieldColors(error: Boolean = false) = OutlinedTextFieldDefaults.colo
     errorBorderColor = Color.Red
 )
 
-private fun SampleState.completa() = pesoFruta.isNotBlank() && gradosBrix.isNotBlank()
+private fun SampleState.completa() = tienePeso && gradosBrix.isNotBlank()
+
+/** Grupos del catálogo de afectaciones en el orden de la lista: externas, internas y luego otras. */
+private fun agrupar(catalogo: List<CachedAfectacionEntity>): List<Pair<String, List<String>>> {
+    val ext = catalogo.filter { it.tipo.contains("extern", true) }.map { it.nombre }
+    val int = catalogo.filter { it.tipo.contains("intern", true) }.map { it.nombre }
+    val otras = catalogo.filter { !it.tipo.contains("extern", true) && !it.tipo.contains("intern", true) }.map { it.nombre }
+    return listOf("Afectación externa" to ext, "Afectación interna" to int, "Otras" to otras).filter { it.second.isNotEmpty() }
+}
+
+private fun coloresGrupo(titulo: String): Pair<Color, Color> = when {
+    titulo.contains("extern", true) -> ExternaFondo to ExternaTexto
+    titulo.contains("intern", true) -> InternaFondo to InternaTexto
+    else -> Color(0xFFEEEEEE) to Color.DarkGray
+}
+
+/** Lista de cambios para los diálogos de confirmación (con scroll si es larga). */
+@Composable
+fun ListaCambios(intro: String, cambios: List<String>) {
+    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+        Text(intro, color = Color.Black, modifier = Modifier.padding(bottom = 8.dp))
+        cambios.forEach { Text("• $it", color = Color.Black, fontSize = 13.sp, modifier = Modifier.padding(vertical = 2.dp)) }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,10 +94,14 @@ fun OrganoFormScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val editando = viewModel.isEditing
 
     var blockMenuExpanded by remember { mutableStateOf(false) }
+    var confirmarGuardar by remember { mutableStateOf(false) }
+    var confirmarCancelar by remember { mutableStateOf(false) }
     val availableBlocks by viewModel.availableBlocks.collectAsState()
-    val afectacionOptions by viewModel.afectacionOptions.collectAsState()
+    val catalogo by viewModel.afectacionesCatalogo.collectAsState()
+    val grupos = remember(catalogo) { agrupar(catalogo) }
     // ponytail: máx. 50 sugerencias en el menú; el usuario escribe para filtrar
     val filteredBlocks = remember(viewModel.bloque, availableBlocks) {
         availableBlocks.filter { it.contains(viewModel.bloque, ignoreCase = true) }.take(50)
@@ -71,7 +109,8 @@ fun OrganoFormScreen(
     val isBlockValid = viewModel.bloque.isNotEmpty() && availableBlocks.contains(viewModel.bloque)
     val binVal = viewModel.numeroBin.toIntOrNull()
     val isBinError = viewModel.numeroBin.isNotEmpty() && (binVal == null || binVal < 1 || binVal > 200)
-    val completas = viewModel.samples.count { it.completa() }
+    val conPeso = viewModel.samples.count { it.tienePeso }
+    val cambios = if (editando) viewModel.cambiosPendientes() else emptyList()
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         viewModel.onPhotoTaken(success)
@@ -88,34 +127,59 @@ fun OrganoFormScreen(
         }
     }
 
-    BackHandler { onBack() }
+    // Salir: en edición, si hay cambios se pide confirmar (con el resumen); si no, sale sin preguntar.
+    fun salir() {
+        if (editando && cambios.isNotEmpty()) confirmarCancelar = true
+        else { if (editando) viewModel.cancelEdit(); onBack() }
+    }
+    BackHandler { salir() }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Ingresar Registro", color = Color.Black, fontWeight = FontWeight.Bold) },
+                title = { Text(if (editando) "Editar registro" else "Ingresar Registro", color = Color.Black, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { salir() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.Black)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = LightBeige)
             )
         },
-        // Guardar siempre visible: no hay que bajar hasta el final del formulario.
+        // Botones siempre visibles: no hay que bajar hasta el final del formulario.
         bottomBar = {
             Surface(color = LightBeige, shadowElevation = 8.dp) {
-                Button(
-                    onClick = {
-                        viewModel.saveRecord { errorMsg ->
-                            scope.launch { snackbarHostState.showSnackbar(errorMsg ?: "Registro guardado correctamente") }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("GUARDAR  ·  $completas/5 muestras", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    if (editando) {
+                        OutlinedButton(onClick = { salir() }, modifier = Modifier.weight(1f).height(52.dp)) {
+                            Text("Cancelar edición", color = Color.Black)
+                        }
+                        Button(
+                            onClick = { confirmarGuardar = true },
+                            enabled = cambios.isNotEmpty(),
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
+                        ) {
+                            Text(if (cambios.isEmpty()) "Sin cambios" else "Guardar cambios (${cambios.size})",
+                                color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                viewModel.saveRecord { errorMsg ->
+                                    scope.launch { snackbarHostState.showSnackbar(errorMsg ?: "Registro guardado correctamente") }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = MaterialTheme.shapes.medium,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
+                        ) {
+                            Text("GUARDAR  ·  $conPeso muestra(s) con peso", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
                 }
             }
         },
@@ -130,7 +194,7 @@ fun OrganoFormScreen(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ── DATOS DEL BIN: bloque + número de bin en una fila ──
+            // ── DATOS DEL BIN: bloque + número de bin en una fila, y el grupo del bloque ──
             FormCard(title = "Datos del bin") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                     ExposedDropdownMenuBox(
@@ -140,7 +204,7 @@ fun OrganoFormScreen(
                     ) {
                         OutlinedTextField(
                             value = viewModel.bloque,
-                            onValueChange = { viewModel.bloque = it.take(8).uppercase(); blockMenuExpanded = true },
+                            onValueChange = { viewModel.onBloqueChange(it.take(8).uppercase()); blockMenuExpanded = true },
                             label = { Text("Bloque") },
                             textStyle = FieldText,
                             singleLine = true,
@@ -163,7 +227,7 @@ fun OrganoFormScreen(
                             filteredBlocks.forEach { option ->
                                 DropdownMenuItem(
                                     text = { Text(option, color = Color.Black) },
-                                    onClick = { viewModel.bloque = option; blockMenuExpanded = false }
+                                    onClick = { viewModel.onBloqueChange(option); blockMenuExpanded = false }
                                 )
                             }
                         }
@@ -182,6 +246,7 @@ fun OrganoFormScreen(
                         colors = fieldColors(isBinError)
                     )
                 }
+                if (isBlockValid) GrupoSelector(viewModel)
             }
 
             // ── 5 MUESTRAS ──
@@ -189,7 +254,7 @@ fun OrganoFormScreen(
                 SampleCard(
                     index = i,
                     sampleState = viewModel.samples[i],
-                    afectacionOptions = afectacionOptions,
+                    grupos = grupos,
                     onPesoChange = { viewModel.updateSamplePeso(i, it) },
                     onColorChange = { viewModel.updateSampleColor(i, it) },
                     onBrixChange = { viewModel.updateSampleBrix(i, it) },
@@ -213,9 +278,9 @@ fun OrganoFormScreen(
                             .clickable { launchCamera() },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (viewModel.globalFotoUri != null) {
+                        if (viewModel.globalFotoPath.isNotEmpty()) {
                             AsyncImage(
-                                model = viewModel.globalFotoUri,
+                                model = File(viewModel.globalFotoPath),
                                 contentDescription = "Foto del registro (tocar para repetir)",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -239,11 +304,88 @@ fun OrganoFormScreen(
             }
         }
     }
+
+    if (confirmarGuardar) {
+        AlertDialog(
+            onDismissRequest = { confirmarGuardar = false },
+            title = { Text("¿Guardar ${cambios.size} cambio(s)?", color = Color.Black) },
+            text = { ListaCambios("Bloque ${viewModel.editOriginal?.bloque} · Bin ${viewModel.editOriginal?.numeroBin}", cambios) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmarGuardar = false
+                    viewModel.saveEdit { err ->
+                        if (err == null) {
+                            Toast.makeText(context, "Cambios guardados", Toast.LENGTH_SHORT).show()
+                            onBack()
+                        } else scope.launch { snackbarHostState.showSnackbar(err) }
+                    }
+                }) { Text("GUARDAR", fontWeight = FontWeight.Bold, color = Color.Black) }
+            },
+            dismissButton = { TextButton(onClick = { confirmarGuardar = false }) { Text("SEGUIR EDITANDO", color = Color.Black) } },
+            containerColor = LightBeige
+        )
+    }
+
+    if (confirmarCancelar) {
+        AlertDialog(
+            onDismissRequest = { confirmarCancelar = false },
+            title = { Text("¿Descartar los cambios?", color = Color.Black) },
+            text = { ListaCambios("Se perderán estos cambios:", cambios) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmarCancelar = false
+                    viewModel.cancelEdit()
+                    onBack()
+                }) { Text("DESCARTAR", fontWeight = FontWeight.Bold, color = Rojo) }
+            },
+            dismissButton = { TextButton(onClick = { confirmarCancelar = false }) { Text("SEGUIR EDITANDO", color = Color.Black) } },
+            containerColor = LightBeige
+        )
+    }
+}
+
+/** Grupo del bloque: muestra GF y grupo siembra, el usuario elige cuál queda y puede editarlo. */
+@Composable
+private fun GrupoSelector(viewModel: OrganoViewModel) {
+    val info = viewModel.infoBloque(viewModel.bloque) ?: return
+    val opciones = listOf("Grupo forza" to info.grupoForza, "Grupo siembra" to info.grupoSiembra).filter { it.second.isNotEmpty() }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFF7F3E8)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (info.grupoForza.isEmpty()) {
+            Text(
+                "Este bloque no tiene grupo forza: se propone el grupo siembra. Elige cuál dejar o edítalo.",
+                fontSize = 13.sp, color = Color(0xFF8A4B00)
+            )
+        }
+        opciones.forEach { (etiqueta, valor) ->
+            Row(
+                Modifier.fillMaxWidth().selectable(selected = viewModel.grupo == valor, onClick = { viewModel.grupo = valor }),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = viewModel.grupo == valor, onClick = { viewModel.grupo = valor },
+                    colors = RadioButtonDefaults.colors(selectedColor = Color.Black))
+                Text("$etiqueta: ", color = Color.Black, fontSize = 14.sp)
+                Text(valor, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        OutlinedTextField(
+            value = viewModel.grupo,
+            onValueChange = { viewModel.grupo = it.uppercase().take(12) },
+            label = { Text("Grupo que queda en el registro (editable)") },
+            textStyle = FieldText,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors()
+        )
+    }
 }
 
 @Composable
 private fun FormCard(
     title: String,
+    subtitle: String? = null,
     trailing: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -255,8 +397,10 @@ private fun FormCard(
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-                    color = Color.Black, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                    if (subtitle != null) Text(subtitle, fontSize = 12.sp, color = Color.Black.copy(alpha = 0.55f))
+                }
                 trailing()
             }
             content()
@@ -295,12 +439,27 @@ private fun DropdownField(
     }
 }
 
+@Composable
+private fun OpcionAfectacion(nombre: String, marcada: Boolean, fondo: Color, texto: Color, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = marcada, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = texto))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(nombre, color = Color.Black, fontWeight = if (marcada) FontWeight.Bold else FontWeight.Normal)
+            }
+        },
+        onClick = onClick,
+        modifier = Modifier.background(fondo)
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SampleCard(
     index: Int,
     sampleState: SampleState,
-    afectacionOptions: List<String>,
+    grupos: List<Pair<String, List<String>>>,
     onPesoChange: (String) -> Unit,
     onColorChange: (String) -> Unit,
     onBrixChange: (String) -> Unit,
@@ -316,6 +475,7 @@ fun SampleCard(
 
     FormCard(
         title = "Muestra ${index + 1}",
+        subtitle = if (!sampleState.tienePeso) "Sin peso: esta muestra no se carga" else null,
         trailing = {
             if (sampleState.completa()) {
                 Icon(Icons.Default.CheckCircle, contentDescription = "Muestra completa", tint = Verde, modifier = Modifier.size(22.dp))
@@ -407,18 +567,18 @@ fun SampleCard(
             )
         }
 
-        // Afectaciones (selección múltiple, catálogo del servidor)
+        // Afectaciones: "Ninguna" primero, luego externas e internas con colores distintos
         ExposedDropdownMenuBox(
             expanded = afectacionMenuExpanded,
             onExpandedChange = { afectacionMenuExpanded = it },
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = sampleState.afectaciones.ifEmpty { listOf("Ninguna") }.joinToString(", "),
+                value = sampleState.afectaciones.ifEmpty { listOf(NINGUNA) }.joinToString(", "),
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Afectaciones") },
-                supportingText = if (afectacionOptions.size <= 1) {{ Text("Sin catálogo de afectaciones: actualízalo en Inicio", color = Color.Red) }} else null,
+                supportingText = if (grupos.isEmpty()) {{ Text("Sin catálogo de afectaciones: actualízalo en Inicio", color = Color.Red) }} else null,
                 textStyle = FieldText,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectacionMenuExpanded) },
                 modifier = Modifier.menuAnchor().fillMaxWidth().heightIn(min = 56.dp, max = 150.dp),
@@ -427,24 +587,36 @@ fun SampleCard(
             ExposedDropdownMenu(
                 expanded = afectacionMenuExpanded,
                 onDismissRequest = { afectacionMenuExpanded = false },
-                modifier = Modifier.background(DarkBeige)
+                modifier = Modifier.background(Color.White)
             ) {
-                afectacionOptions.forEach { option ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = sampleState.afectaciones.contains(option),
-                                    onCheckedChange = null,
-                                    colors = CheckboxDefaults.colors(checkedColor = Color.Black)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(option, color = Color.Black)
-                            }
-                        },
-                        onClick = { onAfectacionToggle(option) }
-                    )
+                OpcionAfectacion(NINGUNA, sampleState.afectaciones.contains(NINGUNA), Color.White, Color.Black) {
+                    onAfectacionToggle(NINGUNA)
                 }
+                grupos.forEach { (titulo, nombres) ->
+                    val (fondo, texto) = coloresGrupo(titulo)
+                    Text(
+                        titulo.uppercase(),
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.fillMaxWidth().background(texto).padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                    nombres.forEach { n ->
+                        OpcionAfectacion(n, sampleState.afectaciones.contains(n), fondo, texto) { onAfectacionToggle(n) }
+                    }
+                }
+            }
+        }
+        // Lo marcado, separado por tipo y con el mismo color de la lista
+        grupos.forEach { (titulo, nombres) ->
+            val marcadas = sampleState.afectaciones.filter { it in nombres }
+            if (marcadas.isNotEmpty()) {
+                val (fondo, texto) = coloresGrupo(titulo)
+                Text(
+                    "$titulo: ${marcadas.joinToString(", ")}",
+                    color = texto, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(fondo).padding(horizontal = 10.dp, vertical = 6.dp)
+                )
             }
         }
     }

@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable("home") {
                             val bloques by viewModel.availableBlocks.collectAsState()
-                            val afectaciones by viewModel.afectacionOptions.collectAsState()
+                            val afectaciones by viewModel.afectacionesCatalogo.collectAsState()
                             HomeScreen(
                                 onNavigateToForm = { navController.navigate("form") },
                                 onNavigateToHistory = { navController.navigate("history") },
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 isUpdatingCatalogs = viewModel.isUpdatingCatalogs,
                                 catalogInfo = if (bloques.isEmpty()) "Sin catálogos: actualízalos con conexión antes de registrar"
-                                              else "${bloques.size} bloques · ${afectaciones.size - 1} afectaciones en el equipo"
+                                              else "${bloques.size} bloques · ${afectaciones.size} afectaciones en el equipo"
                             )
                         }
                         composable("data") {
@@ -66,8 +66,13 @@ class MainActivity : ComponentActivity() {
                         composable("history") {
                             HistoryScreen(
                                 viewModel = viewModel,
-                                onBack = { navController.popBackStack() }
+                                onBack = { navController.popBackStack() },
+                                onEdit = { r -> viewModel.startEdit(r); navController.navigate("edit") }
                             )
+                        }
+                        // Edición de un registro no enviado: mismo formulario, en modo edición
+                        composable("edit") {
+                            OrganoFormScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
                         }
                     }
                 }
